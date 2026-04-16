@@ -196,9 +196,9 @@ def fig1_qualitative(fig_dir, db, prep_dir, medsam2_dir, sam2_dir, unet_ckpt):
 
     frame_indices = np.linspace(0, T - 1, 6, dtype=int)
 
-    fig, axes = plt.subplots(4, 6, figsize=(18, 12))
+    fig, axes = plt.subplots(5, 6, figsize=(18, 15))
     fig.patch.set_facecolor('white')
-    row_labels = ['Ground Truth', 'MedSAM2 (Dual-anchored)', 'SAM2 (ED-anchored)', 'U-Net']
+    row_labels = ['MRI', 'Ground Truth', 'MedSAM2 (Dual-anchored)', 'SAM2 (ED-anchored)', 'U-Net']
 
     for col, t in enumerate(frame_indices):
         # ── Shared: raw MRI frame resized to 512 ──
@@ -208,8 +208,14 @@ def fig1_qualitative(fig_dir, db, prep_dir, medsam2_dir, sam2_dir, unet_ckpt):
         frame_512 = np.array(Image.fromarray(frame_u8).resize((512, 512), Image.BILINEAR))
         t_label   = 'ED' if t == ed_idx else ('ES' if t == es_idx else f't={t}')
 
-        # Row 0: GT at ED/ES, blank elsewhere
+        # Row 0: raw grayscale MRI
         ax = axes[0, col]
+        ax.imshow(frame_512, cmap='gray', vmin=0, vmax=255)
+        ax.set_title(t_label, color='black', fontsize=9)
+        ax.axis('off')
+
+        # Row 1: GT at ED/ES, blank elsewhere
+        ax = axes[1, col]
         if t == ed_idx:
             gt_disp = np.zeros((512, 512, 3), dtype=np.float32)
             for cls_id, color in LABEL_COLOR.items():
@@ -229,14 +235,14 @@ def fig1_qualitative(fig_dir, db, prep_dir, medsam2_dir, sam2_dir, unet_ckpt):
             ax.set_title(t_label, color='black', fontsize=9)
         ax.axis('off')
 
-        # Row 1: MedSAM2 dual-anchored overlay
-        ax = axes[1, col]
+        # Row 2: MedSAM2 dual-anchored overlay
+        ax = axes[2, col]
         ax.imshow(overlay_mask(frame_512, pred_bidir[t]))
         ax.set_title(t_label, color='black', fontsize=9)
         ax.axis('off')
 
-        # Row 2: SAM2 ED-anchored overlay
-        ax = axes[2, col]
+        # Row 3: SAM2 ED-anchored overlay
+        ax = axes[3, col]
         if sam2_avail and pred_sam2 is not None:
             ax.imshow(overlay_mask(frame_512, pred_sam2[t]))
         else:
@@ -244,8 +250,8 @@ def fig1_qualitative(fig_dir, db, prep_dir, medsam2_dir, sam2_dir, unet_ckpt):
         ax.set_title(t_label, color='black', fontsize=9)
         ax.axis('off')
 
-        # Row 3: U-Net prediction overlay
-        ax = axes[3, col]
+        # Row 4: U-Net prediction overlay
+        ax = axes[4, col]
         if unet_model is not None:
             import torch
             # percentile-norm already done above; just resize to 256×256
