@@ -1,0 +1,46 @@
+# Large raw data — not versioned
+preprocessed/
+database/
+ACDC_Dataset_Summary.md
+ACDC_dataset.zip
+
+# Model results (large NPZs)
+results/medsam2/
+results/sam2/
+
+# Keep small result files
+!results/unet/results.json
+!results/table1_dice.csv
+
+# Model checkpoints (large binaries)
+results/unet/best_model.pth
+MedSAM2/checkpoints/
+*.pt
+*.pth
+yolo11n-seg.pt
+yolo26n.pt
+
+# Third-party repos (install separately)
+MedSAM2/
+pytorch-unet/
+dinov2/
+sam2/
+medsam2/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Logs
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
