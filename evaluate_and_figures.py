@@ -198,7 +198,7 @@ def fig1_qualitative(fig_dir, db, prep_dir, medsam2_dir, sam2_dir, unet_ckpt):
 
     fig, axes = plt.subplots(4, 6, figsize=(18, 12))
     fig.patch.set_facecolor('white')
-    row_labels = ['Ground Truth', 'MedSAM2 (bidir)', 'SAM2 (fwd)', 'U-Net']
+    row_labels = ['Ground Truth', 'MedSAM2 (Dual-anchored)', 'SAM2 (ED-anchored)', 'U-Net']
 
     for col, t in enumerate(frame_indices):
         # ── Shared: raw MRI frame resized to 512 ──
@@ -229,13 +229,13 @@ def fig1_qualitative(fig_dir, db, prep_dir, medsam2_dir, sam2_dir, unet_ckpt):
             ax.set_title(t_label, color='black', fontsize=9)
         ax.axis('off')
 
-        # Row 1: MedSAM2 bidir overlay
+        # Row 1: MedSAM2 dual-anchored overlay
         ax = axes[1, col]
         ax.imshow(overlay_mask(frame_512, pred_bidir[t]))
         ax.set_title(t_label, color='black', fontsize=9)
         ax.axis('off')
 
-        # Row 2: SAM2 fwd overlay
+        # Row 2: SAM2 ED-anchored overlay
         ax = axes[2, col]
         if sam2_avail and pred_sam2 is not None:
             ax.imshow(overlay_mask(frame_512, pred_sam2[t]))
@@ -338,7 +338,7 @@ def fig2_boxplot(fig_dir, raw_results):
     print(f"Saved {out}")
 
 
-# ── Figure 3: Per-pathology heatmap (MedSAM2 bidir) ─────────────────────────
+# ── Figure 3: Per-pathology heatmap (MedSAM2 dual-anchored) ──────────────────
 def fig3_pathology_heatmap(fig_dir, medsam2_bidir_results):
     data = np.zeros((len(GROUPS), 3))
     for i, grp in enumerate(GROUPS):
@@ -358,7 +358,7 @@ def fig3_pathology_heatmap(fig_dir, medsam2_bidir_results):
             ax.text(j, i, f'{data[i,j]:.2f}', ha='center', va='center',
                     fontsize=11, color='black' if data[i,j] > 0.65 else 'white')
     plt.colorbar(im, ax=ax, label='Dice Score')
-    ax.set_title('MedSAM2 (Bidir) Dice per Pathology', fontsize=12)
+    ax.set_title('MedSAM2 (Dual-anchored) Dice per Pathology', fontsize=12)
     plt.tight_layout()
     out = os.path.join(fig_dir, 'fig3_pathology_heat.png')
     plt.savefig(out, dpi=150, bbox_inches='tight')
@@ -473,10 +473,10 @@ def main(args):
 
     print("\n══ Computing Dice for all methods ══")
 
-    ms2_fwd   = compute_method_dice(medsam2_dir, mode='ed_pred', eval_at='es')
-    ms2_rev   = compute_method_dice(medsam2_dir, mode='es_pred', eval_at='ed')
-    ms2_bidir = compute_method_dice(medsam2_dir, mode='bidir',   eval_at='es')
-    sam2_fwd  = compute_method_dice(sam2_dir,    mode='ed_pred', eval_at='es')
+    ms2_ed   = compute_method_dice(medsam2_dir, mode='ed_pred', eval_at='es')
+    ms2_es   = compute_method_dice(medsam2_dir, mode='es_pred', eval_at='ed')
+    ms2_dual = compute_method_dice(medsam2_dir, mode='bidir',   eval_at='es')
+    sam2_ed  = compute_method_dice(sam2_dir,    mode='ed_pred', eval_at='es')
 
     unet_res = {}
     if os.path.exists(unet_json):
@@ -487,11 +487,11 @@ def main(args):
 
     # Build ordered raw-results dict for fig2
     raw_results = {}
-    if sam2_fwd:   raw_results['SAM2 (fwd)']         = sam2_fwd
-    if ms2_fwd:    raw_results['MedSAM2 (fwd)']       = ms2_fwd
-    if ms2_rev:    raw_results['MedSAM2 (rev)']       = ms2_rev
-    if ms2_bidir:  raw_results['MedSAM2 (bidir)']     = ms2_bidir
-    if unet_res:   raw_results['U-Net (supervised)']  = unet_res
+    if sam2_ed:   raw_results['SAM2 (ED-anchored)']           = sam2_ed
+    if ms2_ed:    raw_results['MedSAM2 (ED-anchored)']        = ms2_ed
+    if ms2_es:    raw_results['MedSAM2 (ES-anchored)']        = ms2_es
+    if ms2_dual:  raw_results['MedSAM2 (Dual-anchored)']      = ms2_dual
+    if unet_res:  raw_results['U-Net (supervised)']           = unet_res
 
     # Summarise for table
     all_results = {name: summarise(d) for name, d in raw_results.items()}
@@ -521,8 +521,8 @@ def main(args):
     fig1_qualitative(args.fig_dir, args.db, prep_dir, medsam2_dir, sam2_dir, unet_ckpt)
     if raw_results:
         fig2_boxplot(args.fig_dir, raw_results)
-    if ms2_bidir:
-        fig3_pathology_heatmap(args.fig_dir, ms2_bidir)
+    if ms2_dual:
+        fig3_pathology_heatmap(args.fig_dir, ms2_dual)
     fig4_timevolume(args.fig_dir, args.db, medsam2_dir)
 
     print(f"\nAll figures saved to {args.fig_dir}")

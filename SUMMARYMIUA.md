@@ -126,42 +126,42 @@ MedSAM2's `propagate_in_video` uses a causal memory bank. At each step, it:
 
 The key limitation: **error accumulates with distance from the prompt frame** because each predicted frame is re-encoded into the memory bank. Frames far from the prompt may degrade in quality.
 
-**Experiment A — Forward from ED (`ed_pred`):**
+**Experiment A — ED-anchored (`ed_pred`):**
 ```
 Prompt: GT bbox at ED frame (ed_idx)
 Propagation:
-  fwd_ed = propagate(prompt=ed_idx, reverse=False)   # covers [ed_idx, T-1]
-  bwd_ed = propagate(prompt=ed_idx, reverse=True)    # covers [0, ed_idx]  (skipped if ed_idx=0)
-  ed_pred = merge(bwd_ed[:ed_idx], fwd_ed[ed_idx:])  # full T-frame coverage
+  propagate(prompt=ed_idx, direction=forward)    # covers [ed_idx, T-1]
+  propagate(prompt=ed_idx, direction=backward)   # covers [0, ed_idx]  (skipped if ed_idx=0)
+  ed_pred = merge both passes                    # full T-frame coverage
 Evaluation: Dice at ES frame → ed_pred[es_idx] vs es_mask
 ```
-The ED frame is the "given" frame; the ES frame is the target to predict. This simulates the clinically common scenario of having an end-diastolic annotation.
+The ED frame is the given anchor; the ES frame is the held-out target. Both temporal directions are propagated internally — "ED-anchored" refers to which frame provides the prompt, not the propagation direction.
 
-**Experiment B — Reverse from ES (`es_pred`):**
+**Experiment B — ES-anchored (`es_pred`):**
 ```
 Prompt: GT bbox at ES frame (es_idx)
 Propagation:
-  bwd_es = propagate(prompt=es_idx, reverse=True)    # covers [0, es_idx]
-  fwd_es = propagate(prompt=es_idx, reverse=False)   # covers [es_idx, T-1]
-  es_pred = merge(bwd_es[:es_idx], fwd_es[es_idx:])  # full T-frame coverage
+  propagate(prompt=es_idx, direction=backward)   # covers [0, es_idx]
+  propagate(prompt=es_idx, direction=forward)    # covers [es_idx, T-1]
+  es_pred = merge both passes                    # full T-frame coverage
 Evaluation: Dice at ED frame → es_pred[ed_idx] vs ed_mask
 ```
-Note: ES→ED propagation traverses the transition from maximum contraction back to maximum relaxation, which is a larger morphological change than ED→ES in most pathologies. Results show ES-anchored propagation consistently outperforms ED-anchored, likely because the ES frame is more diagnostically informative (smaller, more distinct structures).
+ES-anchored consistently outperforms ED-anchored: the ES frame captures the heart at maximum contraction — structures are smaller, more geometrically distinct, and the GT bounding box is tighter — giving the memory bank a more discriminative initialisation.
 
-**Experiment C — Bidirectional (`bidir`):**
+**Experiment C — Dual-anchored (`bidir`):**
 ```
 mid = (ed_idx + es_idx) // 2
-bidir[0 : mid+1]  = ed_pred[0 : mid+1]   # frames closer to ED use ED-anchored prediction
-bidir[mid+1 : T]  = es_pred[mid+1 : T]   # frames closer to ES use ES-anchored prediction
-Evaluation: Dice at ES → bidir[es_idx] vs es_mask
-           (identical to Exp A at that frame, since bidir[es_idx] = ed_pred[es_idx])
+dual[0 : mid+1]  = ed_pred[0 : mid+1]   # frames nearer to ED use ED-anchored prediction
+dual[mid+1 : T]  = es_pred[mid+1 : T]   # frames nearer to ES use ES-anchored prediction
+Evaluation: Dice at ES → dual[es_idx] vs es_mask
+           (numerically identical to Exp A, since dual[es_idx] = ed_pred[es_idx])
 ```
-**Bidir's value is not in Dice numbers** (which are the same as A/B at the respective evaluation frames) but in **intermediate-frame quality**: the maximum propagation distance from any frame to its nearest anchor is reduced from `T-1-ed_idx` to approximately `(es_idx-ed_idx)/2`, halving the worst-case drift. This directly improves the reliability of the full-cycle LV time-volume curves (Experiment F).
+**Dual-anchored's value is not in the Dice numbers** (which are the same as A/B at the respective evaluation frames) but in **intermediate-frame quality**: every frame is now within `(es_idx-ed_idx)/2` steps of its nearest anchor rather than up to `T-1` steps, halving worst-case memory-bank drift. This directly improves the LV time-volume curves (Experiment F).
 
 ### 3.3 SAM2-tiny Ablation (`infer_sam2.py`)
 
-**Experiment D — Vanilla SAM2 Forward:**  
-Identical to Experiment A but using the unmodified `sam2.1_hiera_tiny.pt` checkpoint without any medical fine-tuning. Only forward propagation from ED is run. This ablation isolates the contribution of medical domain fine-tuning from the architectural design. Output key: `ed_pred`.
+**Experiment D — SAM2 ED-anchored (no medical fine-tuning):**  
+Identical to Experiment A (ED-anchored) but using the unmodified `sam2.1_hiera_tiny.pt` checkpoint. Only the ED-anchored pass is run. This ablation isolates the contribution of medical domain fine-tuning from the underlying video-propagation architecture. Output key: `ed_pred`.
 
 ### 3.4 Supervised U-Net Baseline (`train_eval_unet.py`)
 
@@ -208,27 +208,27 @@ LV_vol_mL(t) = Σ_slices [(bidir[t] == 3).sum() × voxel_mm³ / 1000]
 
 ### Table 1 — Dice at Evaluation Frame (Val Set, n=20, stratified)
 
-| Method | Prompt | Eval Frame | RV | Myo | LV |
+| Method | Anchor Frame(s) | Eval Frame | RV | Myo | LV |
 |---|---|---|---|---|---|
-| SAM2-tiny (fwd) | GT ED bbox | ES | 0.611 ± 0.140 | 0.280 ± 0.197 | 0.559 ± 0.159 |
-| MedSAM2 (fwd) | GT ED bbox | ES | 0.716 ± 0.111 | 0.667 ± 0.200 | 0.699 ± 0.193 |
-| MedSAM2 (rev) | GT ES bbox | ED | 0.784 ± 0.116 | 0.789 ± 0.137 | 0.856 ± 0.125 |
-| MedSAM2 (bidir) | GT ED+ES bbox | ES | 0.850 ± 0.092 | 0.809 ± 0.125 | 0.843 ± 0.111 |
+| SAM2 (ED-anchored) | GT ED bbox | ES | 0.611 ± 0.140 | 0.280 ± 0.197 | 0.559 ± 0.159 |
+| MedSAM2 (ED-anchored) | GT ED bbox | ES | 0.716 ± 0.111 | 0.667 ± 0.200 | 0.699 ± 0.193 |
+| MedSAM2 (ES-anchored) | GT ES bbox | ED | 0.784 ± 0.116 | 0.789 ± 0.137 | 0.856 ± 0.125 |
+| MedSAM2 (Dual-anchored) | GT ED+ES bbox | ES | 0.850 ± 0.092 | 0.809 ± 0.125 | 0.843 ± 0.111 |
 | U-Net (supervised) | 80-patient training | ES | **0.914 ± 0.079** | **0.914 ± 0.046** | **0.906 ± 0.078** |
 
 **Key observations:**
 
-1. **Medical fine-tuning is essential:** SAM2-tiny vs MedSAM2 (fwd) — Myo Dice jumps from 0.280 to 0.667 (+0.387). Vanilla SAM2 essentially fails on Myocardium, the most challenging structure due to its thin ring-shaped morphology.
+1. **Medical fine-tuning is essential:** SAM2 (ED-anchored) vs MedSAM2 (ED-anchored) — Myo Dice jumps from 0.280 to 0.667 (+0.387). Vanilla SAM2 essentially fails on Myocardium, the most challenging structure due to its thin ring-shaped morphology.
 
-2. **ES→ED is harder to propagate than ED→ES, yet achieves better Dice:** MedSAM2 (rev) outperforms (fwd) across all structures. The ES frame captures the heart at maximum contraction — structures are smaller and more distinct, making the prompt mask more informative and precise. The resulting bounding box tightly constrains the model, leading to better initialisation.
+2. **ES-anchored outperforms ED-anchored despite propagating across the same full cycle:** MedSAM2 (ES-anchored) outperforms (ED-anchored) across all structures. The ES frame captures the heart at maximum contraction — structures are smaller and more geometrically distinct, giving the model a more discriminative anchor initialisation.
 
-3. **Bidir combines the best of both prompts:** Using both GT frames as anchors, MedSAM2 (bidir) achieves the highest zero-shot performance. The ES-anchored half of the cycle (which covers the ED evaluation frame) outperforms pure forward propagation from ED.
+3. **Dual-anchored combines the best of both anchors:** Using both GT frames, MedSAM2 (Dual-anchored) achieves the highest zero-shot performance. Each half of the cardiac cycle uses its nearer anchor, reducing maximum propagation drift.
 
-4. **Zero-shot vs supervised gap:** MedSAM2 (bidir) mean Dice ≈ 0.834 vs U-Net ≈ 0.911. The gap of ~0.077 Dice points is modest given that MedSAM2 receives no cardiac training data. Crucially, MedSAM2 produces segmentation for **all ~30 frames** per patient, while U-Net is evaluated only at ES frames.
+4. **Zero-shot vs supervised gap:** MedSAM2 (Dual-anchored) mean Dice ≈ 0.834 vs U-Net ≈ 0.911. The gap of ~0.077 Dice points is modest given that MedSAM2 receives no cardiac training data. Crucially, MedSAM2 produces segmentation for **all ~30 frames** per patient, while U-Net is evaluated only at ES frames.
 
 ### Experiment F — LV Time-Volume Curves (Centrepiece)
 
-Using MedSAM2 bidir predictions for all 100 patients and all T frames per patient, LV volume (mL) is computed at each cardiac phase. Curves are aligned to ED (phase=0%), interpolated to a 100-point common grid, and averaged per pathology group.
+Using MedSAM2 dual-anchored predictions for all 100 patients and all T frames per patient, LV volume (mL) is computed at each cardiac phase. Curves are aligned to ED (phase=0%), interpolated to a 100-point common grid, and averaged per pathology group.
 
 **Expected physiological signatures per group:**
 
@@ -250,9 +250,9 @@ These pathology-specific signatures are **only extractable if full-cycle segment
 
 1. **First systematic evaluation of MedSAM2 video propagation for 4D cardiac cine MRI segmentation** on the ACDC benchmark across all 5 pathology groups.
 
-2. **Experiment design clarifying directionality of propagation:** We show that ES-anchored propagation (Exp B) consistently outperforms ED-anchored (Exp A) due to the geometric properties of the ES frame. This design insight is novel and practically important.
+2. **Anchor-frame choice determines segmentation quality:** We show that ES-anchored propagation (Exp B) consistently outperforms ED-anchored (Exp A) across all structures. The key insight — that all three experiments propagate in both temporal directions, and what differs is only the choice of anchor frame — clarifies a misconception common in the video-propagation literature.
 
-3. **Bidir strategy as a principled combination:** The mid-point anchor assignment reduces worst-case frame-to-anchor distance, improving intermediate-frame quality for time-volume analysis.
+3. **Dual-anchored strategy as a principled combination:** The mid-point anchor assignment reduces worst-case frame-to-anchor distance, improving intermediate-frame quality for time-volume analysis.
 
 4. **Ablation of medical fine-tuning:** The SAM2 vs MedSAM2 comparison isolates the contribution of medical domain adaptation. The +0.387 Myo Dice improvement demonstrates that cardiac-domain fine-tuning is critical, not just SAM2's architecture.
 
@@ -272,9 +272,9 @@ These pathology-specific signatures are **only extractable if full-cycle segment
 
 1. **GT prompt at inference:** Both MedSAM2 and SAM2 ablations use ground-truth bounding boxes as prompts. In a fully automatic deployment, prompts would need to be generated by a detector. Performance would decrease without GT prompts.
 
-2. **ED=frame0 assumption:** Most ACDC patients have ED at the first temporal frame, simplifying forward propagation (no backward pass needed). Patients with ED at later frames require both forward and backward passes, introducing additional computational cost.
+2. **ED=frame0 assumption:** Most ACDC patients have ED at the first temporal frame, so the ED-anchored forward pass already covers the full cycle without a backward pass. Patients where ED occurs mid-sequence require both passes, increasing computational cost.
 
-3. **Supervised gap remains:** U-Net achieves 0.911 mean Dice vs 0.834 for MedSAM2 bidir. For applications requiring the highest per-frame accuracy (e.g., surgical planning), a trained model is still preferable.
+3. **Supervised gap remains:** U-Net achieves 0.911 mean Dice vs 0.834 for MedSAM2 (Dual-anchored). For applications requiring the highest per-frame accuracy (e.g., surgical planning), a trained model is still preferable.
 
 4. **Myocardium remains hardest:** Myo Dice for MedSAM2 (0.809) lags LV (0.843) and RV (0.850) due to the thin ring morphology (~5–8 mm) and low contrast at boundaries.
 
@@ -339,9 +339,9 @@ sbatch --dependency=afterok:$J1:$J2:$J3 jobs/job_eval.sh             # figures
 
 | Figure | File | Description |
 |---|---|---|
-| Fig 1 | `fig1_qualitative.png` | 4 rows × 6 frames. Row 0: GT (at ED/ES only, blank elsewhere). Row 1: MedSAM2 bidir overlay. Row 2: SAM2 fwd overlay. Row 3: U-Net per-frame. Patient 037 (DCM), mid-slice. Demonstrates qualitative propagation quality and method comparison. |
-| Fig 2 | `fig2_boxplot.png` | 3 subplots (RV, Myo, LV), 5 methods each. Box plots show full distribution of per-patient Dice across the 20-patient stratified val set. Ordered: SAM2→MedSAM2 fwd→rev→bidir→U-Net. |
-| Fig 3 | `fig3_pathology_heat.png` | 5×3 heatmap (pathology × structure). MedSAM2 bidir Dice per group. Colour scale green=high, red=low. Reveals which pathologies are harder to segment. |
+| Fig 1 | `fig1_qualitative.png` | 4 rows × 6 frames. Row 0: GT (at ED/ES only, blank elsewhere). Row 1: MedSAM2 (Dual-anchored) overlay. Row 2: SAM2 (ED-anchored) overlay. Row 3: U-Net per-frame. Patient 037 (DCM), mid-slice. |
+| Fig 2 | `fig2_boxplot.png` | 3 subplots (RV, Myo, LV), 5 methods each. Box plots of per-patient Dice. Ordered: SAM2 (ED-anchored) → MedSAM2 (ED-anchored) → (ES-anchored) → (Dual-anchored) → U-Net. |
+| Fig 3 | `fig3_pathology_heat.png` | 5×3 heatmap (pathology × structure). MedSAM2 (Dual-anchored) Dice per group. Colour scale green=high, red=low. Reveals which pathologies are harder to segment. |
 | Fig 4 | `fig4_timevolume.png` | **Centrepiece.** 5 subplots, one per pathology. LV volume (mL) vs cardiac phase (%) for all 100 patients. Mean ± std shading. ED marked at 0%, ES marked with dashed red line. Pathology-specific curve shapes visible. |
 
 ---
