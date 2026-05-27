@@ -1,3 +1,14 @@
+MnM/
+MnM2/
+
+.nii.gz
+preprocessed_acdc_test/
+
+# Ignore PNG files everywhere except figures/
+*.png
+!figures/*.png
+
+2026-03-19-setup-gpu-skills/
 # Large raw data — not versioned
 preprocessed/
 database/

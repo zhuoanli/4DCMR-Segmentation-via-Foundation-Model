@@ -139,7 +139,7 @@ def main(args):
     for npz_path in tqdm(npz_files):
         stem = os.path.basename(npz_path).replace('.npz', '')
         out_path = os.path.join(args.out, stem + '.npz')
-        if os.path.exists(out_path):
+        if os.path.exists(out_path) and not args.overwrite:
             continue   # resume if interrupted
 
         d = np.load(npz_path, allow_pickle=True)
@@ -201,4 +201,6 @@ if __name__ == '__main__':
     parser.add_argument('--cfg',  default='configs/sam2.1_hiera_t512.yaml')
     parser.add_argument('--data', default='/scratch/gautschi/li4533/MIUA_2026/preprocessed')
     parser.add_argument('--out',  default='/scratch/gautschi/li4533/MIUA_2026/results/medsam2')
+    parser.add_argument('--overwrite', action='store_true',
+                        help='Overwrite existing output NPZ files (default: skip)')
     main(parser.parse_args())

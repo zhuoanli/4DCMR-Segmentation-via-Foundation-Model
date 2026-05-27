@@ -186,70 +186,143 @@ def train(args):
 
 
 # ── Evaluation on val set ES frames ──────────────────────────────────────────
+def _infer_volume(model, vol, device):
+    """Run UNet on every slice of vol (H, W, Z), return 3D prediction (H, W, Z) at original res."""
+    H, W, Z = vol.shape
+    pred_3d = np.zeros((H, W, Z), dtype=np.uint8)
+    for z in range(Z):
+        sl = vol[:, :, z]
+        p2, p98 = np.percentile(sl, 2), np.percentile(sl, 98)
+        sl_norm = np.clip((sl - p2) / (p98 - p2 + 1e-8), 0, 1).astype(np.float32)
+        sl_256 = np.array(
+            Image.fromarray((sl_norm * 255).astype(np.uint8)).resize((256, 256), Image.BILINEAR),
+            dtype=np.float32
+        ) / 255.0
+        inp = torch.tensor(sl_256[None, None], dtype=torch.float32).to(device)
+        with torch.no_grad():
+            pred_256 = model(inp).argmax(dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
+        # resize prediction back to original resolution
+        pred_orig = np.array(
+            Image.fromarray(pred_256).resize((W, H), Image.NEAREST), dtype=np.uint8
+        )
+        pred_3d[:, :, z] = pred_orig
+    return pred_3d
+
+
 def evaluate(args):
-    """Load best checkpoint, predict ES frames of val patients, save per-patient Dice."""
+    """Load best checkpoint, predict ES frames of val patients, save per-patient Dice + EF."""
     device    = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     best_ckpt = os.path.join(args.out, 'best_model.pth')
     model     = UNet(n_channels=1, n_classes=4, bilinear=True).to(device)
     model.load_state_dict(torch.load(best_ckpt, map_location=device))
     model.eval()
 
-    val_ids = list(range(81, 101))
-    results = {}  # pid -> {RV, Myo, LV, mean}
+    val_ids = [17,18,19,20, 37,38,39,40, 57,58,59,60, 77,78,79,80, 97,98,99,100]
+    results     = {}   # pid -> {RV, Myo, LV, mean}  (legacy Dice-only JSON)
+    metrics_list = []  # entries for metrics_acdc_val.json
 
     for pid in tqdm(val_ids, desc='Evaluating val patients'):
         pdir = os.path.join(args.db, f'patient{pid:03d}')
         if not os.path.isdir(pdir):
             continue
         try:
-            _, _, es_img_f, es_gt_f = find_frame_files(pdir, pid)
+            ed_img_f, ed_gt_f, es_img_f, es_gt_f = find_frame_files(pdir, pid)
         except AssertionError:
             continue
 
+        # load volumes
+        ed_nii = nib.load(ed_img_f)
         es_vol = nib.load(es_img_f).get_fdata(dtype=np.float32)  # (H, W, Z)
+        ed_vol = ed_nii.get_fdata(dtype=np.float32)
         es_gt  = nib.load(es_gt_f).get_fdata(dtype=np.float32).astype(np.uint8)
+        ed_gt  = nib.load(ed_gt_f).get_fdata(dtype=np.float32).astype(np.uint8)
 
+        # voxel volume in mL
+        zooms = ed_nii.header.get_zooms()[:3]  # (dy, dx, dz) mm
+        voxel_mm3 = float(zooms[0]) * float(zooms[1]) * float(zooms[2])
+
+        # group label
+        cfg_path = os.path.join(pdir, 'Info.cfg')
+        group = parse_info_cfg(cfg_path).get('Group', 'UNK') if os.path.exists(cfg_path) else 'UNK'
+
+        # run inference on both frames for volume computation
+        es_pred_3d = _infer_volume(model, es_vol, device)
+        ed_pred_3d = _infer_volume(model, ed_vol, device)
+
+        # compute Dice on annotated ES slices (resize pred to 256 for comparison)
         slice_dices = {1: [], 2: [], 3: []}
         for z in range(es_vol.shape[2]):
-            img_sl = es_vol[:, :, z]
-            gt_sl  = es_gt[:, :, z]
+            gt_sl = es_gt[:, :, z]
             if gt_sl.max() == 0:
                 continue
-            p2, p98 = np.percentile(img_sl, 2), np.percentile(img_sl, 98)
-            img_sl  = np.clip((img_sl - p2) / (p98 - p2 + 1e-8), 0, 1).astype(np.float32)
-            img_sl  = np.array(
-                Image.fromarray((img_sl * 255).astype(np.uint8)).resize((256, 256), Image.BILINEAR),
-                dtype=np.float32
-            ) / 255.0
-            gt_256  = np.array(
+            pred_sl = es_pred_3d[:, :, z]
+            pred_256 = np.array(
+                Image.fromarray(pred_sl).resize((256, 256), Image.NEAREST), dtype=np.int64
+            )
+            gt_256 = np.array(
                 Image.fromarray(gt_sl).resize((256, 256), Image.NEAREST), dtype=np.int64
             )
-            inp = torch.tensor(img_sl[None, None], dtype=torch.float32).to(device)
-            with torch.no_grad():
-                pred_256 = model(inp).argmax(dim=1).squeeze(0).cpu().numpy()
             for cls in [1, 2, 3]:
                 slice_dices[cls].append(dice_np(pred_256, gt_256, cls))
+
+        # clinical metrics
+        pred_EDV = float((ed_pred_3d == 3).sum()) * voxel_mm3 / 1000.0
+        pred_ESV = float((es_pred_3d == 3).sum()) * voxel_mm3 / 1000.0
+        pred_EF  = float((pred_EDV - pred_ESV) / pred_EDV * 100.0) if pred_EDV > 1e-3 else None
+        gt_EDV   = float((ed_gt == 3).sum()) * voxel_mm3 / 1000.0
+        gt_ESV   = float((es_gt == 3).sum()) * voxel_mm3 / 1000.0
+        gt_EF    = float((gt_EDV - gt_ESV) / gt_EDV * 100.0) if gt_EDV > 1e-3 else None
 
         rv  = float(np.mean(slice_dices[1])) if slice_dices[1] else 0.0
         myo = float(np.mean(slice_dices[2])) if slice_dices[2] else 0.0
         lv  = float(np.mean(slice_dices[3])) if slice_dices[3] else 0.0
         results[pid] = {'RV': rv, 'Myo': myo, 'LV': lv, 'mean': (rv + myo + lv) / 3}
 
+        metrics_list.append({
+            'pid':      f'patient{pid:03d}',
+            'group':    group,
+            'dice_RV':  rv,
+            'dice_Myo': myo,
+            'dice_LV':  lv,
+            'hd95_RV':  None, 'hd95_Myo': None, 'hd95_LV': None,
+            'assd_RV':  None, 'assd_Myo': None, 'assd_LV': None,
+            'pred_EF':  pred_EF,
+            'pred_EDV': pred_EDV,
+            'pred_ESV': pred_ESV,
+            'gt_EF':    gt_EF,
+            'gt_EDV':   gt_EDV,
+            'gt_ESV':   gt_ESV,
+        })
+
     # Print summary
     rv_all  = [v['RV']  for v in results.values()]
     myo_all = [v['Myo'] for v in results.values()]
     lv_all  = [v['LV']  for v in results.values()]
     mn_all  = [v['mean'] for v in results.values()]
-    print("\n── U-Net ES-frame Dice (val patients 081-100) ──")
+    print("\n── U-Net ES-frame Dice (stratified val set) ──")
     print(f"  RV : {np.mean(rv_all):.3f} ± {np.std(rv_all):.3f}")
     print(f"  Myo: {np.mean(myo_all):.3f} ± {np.std(myo_all):.3f}")
     print(f"  LV : {np.mean(lv_all):.3f} ± {np.std(lv_all):.3f}")
     print(f"  Mean: {np.mean(mn_all):.3f} ± {np.std(mn_all):.3f}")
+    ef_vals = [e['pred_EF'] for e in metrics_list if e['pred_EF'] is not None]
+    print(f"  EF  : {np.mean(ef_vals):.1f} ± {np.std(ef_vals):.1f}% (pred, n={len(ef_vals)})")
 
+    # save legacy Dice-only JSON
     out_json = os.path.join(args.out, 'results.json')
     with open(out_json, 'w') as f:
         json.dump(results, f, indent=2)
-    print(f"Saved per-patient results to {out_json}")
+    print(f"Saved per-patient Dice to {out_json}")
+
+    # merge UNet EF data into metrics_acdc_val.json
+    metrics_path = os.path.join(os.path.dirname(args.out), 'metrics_acdc_val.json')
+    existing = {}
+    if os.path.exists(metrics_path):
+        with open(metrics_path) as f:
+            existing = json.load(f)
+    existing['UNet'] = metrics_list
+    with open(metrics_path, 'w') as f:
+        json.dump(existing, f, indent=2)
+    print(f"Merged UNet EF data into {metrics_path}")
 
 
 if __name__ == '__main__':
@@ -258,9 +331,11 @@ if __name__ == '__main__':
     parser.add_argument('--out',    default='/scratch/gautschi/li4533/MIUA_2026/results/unet')
     parser.add_argument('--epochs', type=int,   default=30)
     parser.add_argument('--batch',  type=int,   default=16)
-    parser.add_argument('--lr',     type=float, default=1e-4)
-    parser.add_argument('--amp',    action='store_true', default=True)
+    parser.add_argument('--lr',        type=float, default=1e-4)
+    parser.add_argument('--amp',       action='store_true', default=True)
+    parser.add_argument('--eval_only', action='store_true')
     args = parser.parse_args()
 
-    train(args)
+    if not args.eval_only:
+        train(args)
     evaluate(args)
