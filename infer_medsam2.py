@@ -63,10 +63,12 @@ def build_predictor(cfg: str, ckpt: str, device: str = 'cuda'):
 
 def run_propagation(predictor, frames_f16: np.ndarray,
                     prompt_mask: np.ndarray, prompt_idx: int,
-                    reverse: bool = False) -> np.ndarray:
+                    reverse: bool = False,
+                    bbox_noise: float = 0.0) -> np.ndarray:
     """
     frames_f16  : (T, 3, 512, 512) float16, values already in [0,1]
     prompt_mask : (512, 512) uint8, labels {0,1,2,3}
+    bbox_noise  : std of per-corner jitter as fraction of box dimension (0=disabled)
     prompt_idx  : frame index of the prompt (ED or ES)
     reverse     : propagate backwards in time
 
@@ -105,6 +107,15 @@ def run_propagation(predictor, frames_f16: np.ndarray,
                 min(511, x_idx.max() + 5),
                 min(511, y_idx.max() + 5),
             ], dtype=np.float32)
+            if bbox_noise > 0.0:
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+                bbox[0] = np.clip(bbox[0] + np.random.normal(0, bbox_noise * w), 0, 511)
+                bbox[1] = np.clip(bbox[1] + np.random.normal(0, bbox_noise * h), 0, 511)
+                bbox[2] = np.clip(bbox[2] + np.random.normal(0, bbox_noise * w), 0, 511)
+                bbox[3] = np.clip(bbox[3] + np.random.normal(0, bbox_noise * h), 0, 511)
+                if bbox[0] > bbox[2]: bbox[0], bbox[2] = bbox[2], bbox[0]
+                if bbox[1] > bbox[3]: bbox[1], bbox[3] = bbox[3], bbox[1]
             predictor.add_new_points_or_box(
                 inference_state=state,
                 frame_idx=prompt_idx,
@@ -155,20 +166,22 @@ def main(args):
 
         T = frames.shape[0]
 
+        bn = args.bbox_noise
+
         # ── Exp A passes: prompt=ED, cover all T frames ──────────────────────
         # fwd from ED: [ed_idx, T-1]
-        fwd_ed = run_propagation(predictor, frames, ed_mask, ed_idx, reverse=False)
+        fwd_ed = run_propagation(predictor, frames, ed_mask, ed_idx, reverse=False, bbox_noise=bn)
         # bwd from ED: [0, ed_idx] (skipped when ed_idx==0, most ACDC patients)
         ed_pred = fwd_ed.copy()
         if ed_idx > 0:
-            bwd_ed = run_propagation(predictor, frames, ed_mask, ed_idx, reverse=True)
+            bwd_ed = run_propagation(predictor, frames, ed_mask, ed_idx, reverse=True, bbox_noise=bn)
             ed_pred[:ed_idx] = bwd_ed[:ed_idx]
 
         # ── Exp B passes: prompt=ES, cover all T frames ──────────────────────
         # bwd from ES: [0, es_idx]
-        bwd_es = run_propagation(predictor, frames, es_mask, es_idx, reverse=True)
+        bwd_es = run_propagation(predictor, frames, es_mask, es_idx, reverse=True, bbox_noise=bn)
         # fwd from ES: [es_idx, T-1]
-        fwd_es = run_propagation(predictor, frames, es_mask, es_idx, reverse=False)
+        fwd_es = run_propagation(predictor, frames, es_mask, es_idx, reverse=False, bbox_noise=bn)
         es_pred = bwd_es.copy()
         if es_idx + 1 < T:
             es_pred[es_idx + 1:] = fwd_es[es_idx + 1:]
@@ -203,4 +216,11 @@ if __name__ == '__main__':
     parser.add_argument('--out',  default='/scratch/gautschi/li4533/MIUA_2026/results/medsam2')
     parser.add_argument('--overwrite', action='store_true',
                         help='Overwrite existing output NPZ files (default: skip)')
-    main(parser.parse_args())
+    parser.add_argument('--bbox_noise', type=float, default=0.0,
+                        help='Bbox robustness: std of per-corner jitter as fraction of box size (0=off)')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed for bbox noise reproducibility')
+    args = parser.parse_args()
+    if args.bbox_noise > 0.0:
+        np.random.seed(args.seed)
+    main(args)

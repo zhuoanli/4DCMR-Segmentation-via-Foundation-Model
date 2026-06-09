@@ -1,29 +1,55 @@
+# ── Large raw data ───────────────────────────────────────────────────────────
 MnM/
 MnM2/
-
-.nii.gz
-preprocessed_acdc_test/
-
-# Ignore PNG files everywhere except figures/
-*.png
-!figures/*.png
-
-2026-03-19-setup-gpu-skills/
-# Large raw data — not versioned
+*.nii.gz
 preprocessed/
+preprocessed_acdc_test/
+preprocessed_mnm/
+preprocessed_mnm2/
 database/
+nnunet_data/
 ACDC_Dataset_Summary.md
 ACDC_dataset.zip
+2026-03-19-setup-gpu-skills/
 
-# Model results (large NPZs)
+# ── Model prediction outputs (large NPZ dirs) ────────────────────────────────
 results/medsam2/
+results/medsam2_mnm/
+results/medsam2_acdc_test/
+results/medsam2_noise10/
+results/medsam2_noise20/
 results/sam2/
+results/sam2_bidir/
+results/sam2_bidir_mnm/
+results/unet_mnm/
+results/unet_combined/
+results/unet_acdc_allframes/
+results/dinov2/
+results/dinov2_mnm/
+results/dinov2_combined/
+results/nnunet/
 
-# Keep small result files
-!results/unet/results.json
+# Keep small metric files
+!results/metrics_acdc_val.json
+!results/metrics_acdc_test.json
+!results/metrics_mnm.json
+!results/paper_table1_dice.csv
+!results/paper_table1_mnm_complete.csv
+!results/paper_table_clinical_acdc_complete.csv
+!results/paper_table_clinical_mnm_complete.csv
+!results/temporal_consistency_acdc_val.csv
+!results/table_surface_acdc_val.csv
+!results/table_surface_acdc_test.csv
+!results/table_surface_mnm.csv
+!results/table_clinical_acdc_complete.csv
+!results/table_clinical_mnm_complete.csv
+!results/table_clinical_acdc_test.csv
+!results/table_clinical_acdc_val.csv
+!results/table_clinical_mnm.csv
 !results/table1_dice.csv
+!results/unet/results.json
 
-# Model checkpoints (large binaries)
+# ── Model checkpoints (large binaries) ───────────────────────────────────────
 results/unet/best_model.pth
 MedSAM2/checkpoints/
 *.pt
@@ -31,27 +57,53 @@ MedSAM2/checkpoints/
 yolo11n-seg.pt
 yolo26n.pt
 
-# Third-party repos (install separately)
+# ── Third-party repos (install separately) ────────────────────────────────────
 MedSAM2/
 pytorch-unet/
 dinov2/
 sam2/
 medsam2/
+CineMA/
+MR-RATE/
+nnUNet/
+LLM_shortpaper/
 
-# Python cache
+# ── Figures: keep paper_ prefixed finals, ignore drafts ──────────────────────
+*.png
+!figures/paper_*.png
+
+# ── Analysis docs and scratch ────────────────────────────────────────────────
+acdc_analysis.md
+mnm_analysis.md
+mnm2_analysis.md
+sofar.md
+report.md
+datasetinfo.md
+final_paper_summary.md
+PAPER_SUMMARY.md
+NOTEBOOK_SETUP_COMPLETE.md
+QUICK_START.md
+ANIMATION_FIX_README.md
+ANIMATION_GUIDE.md
+TODOlist_4.16.md
+regen_fig4_acdc.py
+
+# ── Python cache ─────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
 
-# Logs
+# ── Logs ─────────────────────────────────────────────────────────────────────
 logs/
 
-# Jupyter
+# ── Jupyter ──────────────────────────────────────────────────────────────────
 .ipynb_checkpoints/
 
-# Editor / OS
+# ── Editor / OS ──────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+*.swp
+*.bak

@@ -464,6 +464,21 @@ def fig3_timevolume(fig_dir, db, medsam2_dir):
         ax.text(0.97, 0.97, f'n={len(curves)}', transform=ax.transAxes,
                 ha='right', va='top', fontsize=9, color='gray')
 
+        # Clinical annotations per pathology group
+        annots = {
+            'DCM':  ('Elevated EDV/ESV\n(dilated LV)', 0.02, 0.15),
+            'HCM':  ('Compact LV\ncavity', 0.02, 0.15),
+            'MINF': ('Reduced stroke\nvolume', 0.02, 0.15),
+            'NOR':  ('Smooth systolic\nemptying', 0.02, 0.15),
+            'RV':   ('Atypical\nLV dynamics', 0.02, 0.15),
+        }
+        if grp in annots:
+            txt, x_frac, y_frac = annots[grp]
+            ax.text(x_frac, y_frac, txt, transform=ax.transAxes,
+                    fontsize=7.5, color=GROUP_COLOR[grp], alpha=0.85,
+                    va='bottom', ha='left',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', alpha=0.6, ec='none'))
+
     plt.suptitle('LV Time-Volume Curves — MedSAM2 Full-Cycle Propagation (mean ± std)',
                  fontsize=13, y=1.02)
     plt.tight_layout()
@@ -585,7 +600,169 @@ def fig3_timevolume_mnm(fig_dir, prep_mnm_dir, medsam2_mnm_dir):
     print(f"Saved {out}")
 
 
-# ── Figure 4: EF Regression + Bland-Altman ───────────────────────────────────
+# ── Figure 4 (NEW): Multi-structure HD95 Ablation + Full-cycle LV Trajectory ──
+
+def fig4_temporal_propagation(fig_dir, db, medsam2_dir, metrics_json_path=None,
+                               unet_allframes_dir=None):
+    """
+    Four-panel figure proving dual-anchoring benefit across all structures:
+      Panel A: RV HD95 bar chart (methods compared)
+      Panel B: Myo HD95 bar chart
+      Panel C: LV HD95 bar chart
+      Panel D: Full-cycle LV volume curves (mean ± std) — verifies dual std is smaller
+    """
+    VAL_PIDS = [
+        'patient017','patient018','patient019','patient020',
+        'patient037','patient038','patient039','patient040',
+        'patient057','patient058','patient059','patient060',
+        'patient077','patient078','patient079','patient080',
+        'patient097','patient098','patient099','patient100',
+    ]
+
+    if metrics_json_path is None:
+        metrics_json_path = os.path.join(RESULTS_DIR, 'metrics_acdc_val.json')
+    with open(metrics_json_path) as f:
+        metrics = json.load(f)
+
+    C_UNET = '#607D8B'
+    C_DINO = '#78909C'
+    C_SAM2 = '#9C27B0'
+    C_ED   = '#F4511E'
+    C_ES   = '#2E7D32'
+    C_DUAL = '#1565C0'
+
+    # Method order — DINOv2/SAM2_ED excluded (in Table 1; HD95 outliers distort scale)
+    BAR_METHODS = [
+        ('UNet',        'U-Net\n(supervised)', C_UNET, 0.75, False),
+        ('SAM2_Dual',   'SAM2\n(Dual)',        C_SAM2, 0.75, False),
+        ('MedSAM2_ED',  'MedSAM2\n(ED)',       C_ED,   0.75, False),
+        ('MedSAM2_ES',  'MedSAM2\n(ES)',       C_ES,   0.75, False),
+        ('MedSAM2_Dual','MedSAM2\n(Dual)†',   C_DUAL, 1.00, True),
+    ]
+
+    STRUCT_CFG = [
+        ('RV',  'hd95_RV',  '(a) Right Ventricle HD95 (mm)'),
+        ('Myo', 'hd95_Myo', '(b) Myocardium HD95 (mm)'),
+        ('LV',  'hd95_LV',  '(c) Left Ventricle HD95 (mm)'),
+    ]
+
+    def get_vals(method_key, metric_key):
+        return [r[metric_key] for r in metrics.get(method_key, [])
+                if r.get(metric_key) is not None]
+
+    # ── Figure: 1 row of 3 HD95 bar charts + 1 volume curve panel ────────────
+    fig = plt.figure(figsize=(20, 5))
+    gs  = gridspec.GridSpec(1, 4, width_ratios=[1, 1, 1, 1.15], wspace=0.38)
+
+    x = np.arange(len(BAR_METHODS))
+
+    for col, (struct, hd_key, title) in enumerate(STRUCT_CFG):
+        ax = fig.add_subplot(gs[col])
+        means, stds, colors, alphas = [], [], [], []
+        for mkey, mlabel, color, alpha, highlight in BAR_METHODS:
+            vals = get_vals(mkey, hd_key)
+            means.append(np.mean(vals) if vals else np.nan)
+            stds.append(np.std(vals) if vals else 0)
+            colors.append(color); alphas.append(alpha)
+
+        bars = ax.bar(x, means, color=colors, alpha=0.82)
+        # Error bars separately (clipped at 0)
+        for i, (m, s) in enumerate(zip(means, stds)):
+            if not np.isnan(m):
+                ax.errorbar(x[i], m, yerr=[[min(s, m)], [s]], fmt='none',
+                            ecolor='#555', elinewidth=1.2, capsize=4)
+        # Bold border on Dual
+        bars[-1].set_linewidth(2.2); bars[-1].set_edgecolor('#0D47A1')
+
+        valid_means = [m for m in means if not np.isnan(m)]
+        ymax = max(m + s for m, s in zip(means, stds) if not np.isnan(m)) * 1.18
+        ax.set_ylim(0, ymax)
+
+        for i, (m, s) in enumerate(zip(means, stds)):
+            if not np.isnan(m):
+                bold = (i == len(BAR_METHODS) - 1)
+                ax.text(x[i], m + s + ymax * 0.01, f'{m:.1f}',
+                        ha='center', va='bottom', fontsize=8,
+                        fontweight='bold' if bold else 'normal',
+                        color=C_DUAL if bold else '#444')
+
+        ax.axhline(means[-1], color=C_DUAL, linestyle='--', linewidth=1, alpha=0.4)
+        ax.set_xticks(x)
+        ax.set_xticklabels([cfg[1] for cfg in BAR_METHODS], fontsize=8)
+        ax.set_ylabel('HD95 (mm) ↓', fontsize=10)
+        ax.set_title(title, fontsize=11, fontweight='bold')
+        ax.grid(axis='y', alpha=0.3)
+        for spine in ['top', 'right']:
+            ax.spines[spine].set_visible(False)
+
+    # ────────────────── Panel D: Propagation distance vs RV Dice scatter ────────
+    ax_sc = fig.add_subplot(gs[3])
+
+    def get_pp(method_key, metric_key):
+        return {r['pid']: r.get(metric_key) for r in metrics.get(method_key, [])}
+
+    # Load per-patient RV Dice and propagation distances
+    dice_ed   = get_pp('MedSAM2_ED',   'dice_RV')
+    dice_es   = get_pp('MedSAM2_ES',   'dice_RV')
+    dice_dual = get_pp('MedSAM2_Dual', 'dice_RV')
+    dice_unet = get_pp('UNet',          'dice_RV')
+
+    prop_dist = {}
+    for pid in VAL_PIDS:
+        pp = sorted(glob(os.path.join(PREP_DIR, f'{pid}_slice*.npz')))
+        if pp:
+            d0 = np.load(pp[0], allow_pickle=True)
+            prop_dist[pid] = int(d0['es_idx']) - int(d0['ed_idx'])
+
+    pids = [p for p in VAL_PIDS if p in prop_dist and p in dice_ed]
+    dist = np.array([prop_dist[p] for p in pids])
+
+    # ED-anchored: evaluated at ES (propagation distance = es_idx - ed_idx = es_idx)
+    ed_d = np.array([dice_ed[p] for p in pids])
+    # ES-anchored: evaluated at ED (same physical distance, reversed direction)
+    es_d = np.array([dice_es.get(p, np.nan) for p in pids])
+    # Dual-anchored: evaluated at ES which is its anchor → distance ≈ 0
+    dual_d = np.array([dice_dual.get(p, np.nan) for p in pids])
+    # UNet: evaluated at ES (its training frame) → distance = 0 (frame-wise)
+    unet_d = np.array([dice_unet.get(p, np.nan) for p in pids])
+
+    np.random.seed(42)
+    jit = np.random.uniform(-0.15, 0.15, len(pids))
+
+    ax_sc.scatter(dist,        ed_d,   color=C_ED,   alpha=0.80, s=50, label='MedSAM2 (ED-anchored)', zorder=3)
+    ax_sc.scatter(dist,        es_d,   color=C_ES,   alpha=0.80, s=50, label='MedSAM2 (ES-anchored)', marker='^', zorder=3)
+    ax_sc.scatter(jit,         dual_d, color=C_DUAL, alpha=0.85, s=60, label='MedSAM2 (Dual)†', marker='D', zorder=4)
+    ax_sc.scatter(jit + 0.3,   unet_d, color=C_UNET, alpha=0.75, s=50, label='U-Net (frame-wise)', marker='s', zorder=3)
+
+    # Regression line through ED + ES points (both suffer from distance)
+    all_d = np.concatenate([dist, dist])
+    all_v = np.concatenate([ed_d, es_d])
+    mask  = ~np.isnan(all_v)
+    z = np.polyfit(all_d[mask], all_v[mask], 1)
+    r = np.corrcoef(all_d[mask], all_v[mask])[0, 1]
+    xfit = np.linspace(0, dist.max() + 1, 50)
+    ax_sc.plot(xfit, np.polyval(z, xfit), color='#333', lw=1.2, ls='--',
+               alpha=0.5, label=f'Trend (r={r:.2f})')
+
+    ax_sc.set_xlabel('Propagation Distance (frames to anchor)', fontsize=10)
+    ax_sc.set_ylabel('RV Dice', fontsize=10)
+    ax_sc.set_xlim(-1.5, dist.max() + 1.5)
+    ax_sc.set_ylim(0.3, 1.05)
+    ax_sc.set_title('(d) Distance–Quality Relationship\n(more distance → lower Dice; Dual = 0 dist)',
+                    fontsize=11, fontweight='bold')
+    ax_sc.legend(fontsize=7.5, loc='lower left'); ax_sc.grid(alpha=0.3)
+    for spine in ['top', 'right']:
+        ax_sc.spines[spine].set_visible(False)
+
+    plt.suptitle('Dual-Anchored MedSAM2: Boundary Accuracy Across All Cardiac Structures',
+                 fontsize=12, y=1.02)
+    out = os.path.join(fig_dir, 'paper_fig4_temporal_propagation.png')
+    plt.savefig(out, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Saved {out}")
+
+
+# ── Figure 4 (ORIGINAL): EF Regression + Bland-Altman (moved to supplementary) ─
 
 def fig4_ef_regression(fig_dir, metrics_json_path):
     from scipy import stats as sp_stats
