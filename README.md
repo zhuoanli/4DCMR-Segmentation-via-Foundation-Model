@@ -21,7 +21,7 @@ Cardiac cine MRI segmentation across the full cardiac cycle is essential for com
 
 ---
 
-## Results (ACDC Validation, n=20)
+## Results
 
 | Method | RV Dice | Myo Dice | LV Dice | RV HD95 (mm) | RV ASSD (mm) |
 |--------|---------|----------|---------|-------------|-------------|
