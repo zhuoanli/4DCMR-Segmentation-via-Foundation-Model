@@ -213,8 +213,8 @@ If you use this code, please cite:
 
 ```bibtex
 @inproceedings{li2026zeroshotcardiac,
-  title     = {Zero-Shot Full-Cycle Cardiac Cine MRI Segmentation and Temporal Functional Analysis via Dual-Anchored Medical Video Foundation Model},
-  author    = {Li, Zhuoan and others},
+  title     = {Zero-Shot Full-Cycle 4D Cardiac Cine MRI Segmentation via Dual-Anchored Medical Video Foundation Model},
+  author    = {Li, Zhuoan et al.},
   booktitle = {Medical Image Understanding and Analysis (MIUA)},
   year      = {2026}
 }
