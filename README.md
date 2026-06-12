@@ -1,6 +1,6 @@
 # Zero-Shot Full-Cycle 4D Cardiac Cine MRI Segmentation via Dual-Anchored Medical Video Foundation Model
 
-**MIUA 2026 — Main Track (Accepted)**
+
 
 ---
 
