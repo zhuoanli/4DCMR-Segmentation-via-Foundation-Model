@@ -1,5 +1,0 @@
-Method,N,EF_MAE,EF_std,EF_r,EDV_MAE,EDV_std,ESV_MAE,ESV_std
-SAM2,0,N/A,N/A,N/A,85.8,48.8,122.0,53.9
-MedSAM2 (ED-anchored),0,N/A,N/A,N/A,85.8,48.8,122.0,53.9
-MedSAM2 (ES-anchored),0,N/A,N/A,N/A,85.8,48.8,122.0,53.9
-MedSAM2 (Dual-anchored)†,0,N/A,N/A,N/A,85.8,48.8,122.0,53.9

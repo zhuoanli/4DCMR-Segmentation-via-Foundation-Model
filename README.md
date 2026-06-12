@@ -40,27 +40,42 @@ Cardiac cine MRI segmentation across the full cardiac cycle is essential for com
 
 ```
 MIUA_2026/
-├── infer_medsam2.py          # Zero-shot inference: ED/ES/dual-anchor propagation
-├── prep_acdc_4d.py           # ACDC dataset preprocessing (NIfTI → NPZ slices)
+├── preprocessing/
+│   ├── prep_acdc_4d.py       # ACDC dataset preprocessing (NIfTI → NPZ slices)
+│   ├── prep_acdc_test.py     # ACDC test set preprocessing
+│   ├── prep_mnm.py           # M&Ms dataset preprocessing
+│   └── prep_mnm2_sa.py       # M&Ms2 short-axis preprocessing
+├── inference/
+│   ├── infer_medsam2.py      # Zero-shot MedSAM2: ED/ES/dual-anchor propagation
+│   ├── infer_sam2.py         # SAM2 baseline inference
+│   ├── infer_unet_acdc_allframes.py  # U-Net all-frame inference for HD95
+│   ├── infer_unet_mnm.py     # U-Net inference on M&Ms
+│   ├── infer_dinov2_acdc_allframes.py
+│   └── infer_dinov2_mnm.py
+├── training/
+│   ├── train_eval_unet.py    # U-Net training and evaluation
+│   ├── train_unet_combined.py
+│   ├── train_eval_dinov2.py  # DINOv2 segmentation head training
+│   └── train_dinov2_combined.py
 ├── compute_all_metrics.py    # Dice, HD95, ASSD, EF/EDV/ESV computation
 ├── evaluate_and_figures.py   # All paper figures and tables
-├── train_eval_unet.py        # Supervised U-Net training and evaluation
-├── train_unet_combined.py    # U-Net training on ACDC + MnM combined
-├── train_eval_dinov2.py      # DINOv2 segmentation head training and evaluation
+├── requirements.txt
 ├── results/
 │   ├── metrics_acdc_val.json         # All method metrics (ACDC validation)
+│   ├── metrics_acdc_test.json
+│   ├── metrics_mnm.json
 │   ├── camera_table1_segmentation.csv
 │   ├── camera_table4_biomarkers.csv
 │   ├── camera_tableA_noise.csv
 │   └── camera_tableB_clinical.csv
 ├── figures/
-│   ├── camera_methods.png            # Methods overview figure (Fig. 1)
-│   ├── paper_fig1_qualitative.png    # Qualitative segmentation results (Fig. 2)
+│   ├── camera_methods.png            # Methods overview (Fig. 1)
+│   ├── paper_fig1_qualitative.png    # Qualitative results (Fig. 2)
 │   ├── paper_fig3_timevolume.png     # LV time-volume curves (Fig. 3)
-│   └── paper_fig_pathology_heatmap.png  # Per-pathology Dice heatmap (Fig. 5)
+│   └── paper_fig_pathology_heatmap.png  # Pathology heatmap (Fig. 5)
 └── camera_ready/
-    ├── figures/                      # All paper figures (final)
-    └── tables/                       # All paper CSV tables (final)
+    ├── figures/                      # Final paper figures
+    └── tables/                       # Final paper CSV tables
 ```
 
 ---
@@ -101,7 +116,7 @@ MedSAM2/configs/sam2.1_hiera_t.yaml
 3. Run preprocessing:
 
 ```bash
-python prep_acdc_4d.py \
+python preprocessing/prep_acdc_4d.py \
     --acdc_dir ACDC_training/ \
     --output_dir preprocessed/ \
     --split train
@@ -116,7 +131,7 @@ This produces per-patient, per-slice NPZ files with keys: `imgs` (T×512×512), 
 ### Dual-anchored (proposed)
 
 ```bash
-python infer_medsam2.py \
+python inference/infer_medsam2.py \
     --preprocessed_dir preprocessed/ \
     --output_dir results/medsam2/ \
     --model_cfg MedSAM2/configs/sam2.1_hiera_t.yaml \
@@ -128,17 +143,17 @@ python infer_medsam2.py \
 
 ```bash
 # ED-anchored
-python infer_medsam2.py --mode forward --output_dir results/medsam2_ed/ ...
+python inference/infer_medsam2.py --mode forward --output_dir results/medsam2_ed/ ...
 
 # ES-anchored
-python infer_medsam2.py --mode backward --output_dir results/medsam2_es/ ...
+python inference/infer_medsam2.py --mode backward --output_dir results/medsam2_es/ ...
 ```
 
 ### Bbox noise robustness (Supplementary A)
 
 ```bash
-python infer_medsam2.py --mode bidir --bbox_noise 0.10 --output_dir results/medsam2_noise10/ ...
-python infer_medsam2.py --mode bidir --bbox_noise 0.20 --output_dir results/medsam2_noise20/ ...
+python inference/infer_medsam2.py --mode bidir --bbox_noise 0.10 --output_dir results/medsam2_noise10/ ...
+python inference/infer_medsam2.py --mode bidir --bbox_noise 0.20 --output_dir results/medsam2_noise20/ ...
 ```
 
 ---
@@ -158,11 +173,11 @@ Outputs metrics to `results/metrics_acdc_val.json` including Dice, HD95, ASSD pe
 ### U-Net (supervised)
 
 ```bash
-python train_eval_unet.py --mode train \
+python training/train_eval_unet.py --mode train \
     --preprocessed_dir preprocessed/ \
     --output_dir results/unet/
 
-python train_eval_unet.py --mode eval \
+python training/train_eval_unet.py --mode eval \
     --preprocessed_dir preprocessed/ \
     --checkpoint results/unet/best_model.pth
 ```
@@ -170,11 +185,11 @@ python train_eval_unet.py --mode eval \
 ### DINOv2 (supervised)
 
 ```bash
-python train_eval_dinov2.py --mode train \
+python training/train_eval_dinov2.py --mode train \
     --preprocessed_dir preprocessed/ \
     --output_dir results/dinov2/
 
-python train_eval_dinov2.py --mode eval \
+python training/train_eval_dinov2.py --mode eval \
     --preprocessed_dir preprocessed/ \
     --checkpoint results/dinov2/best_model.pth
 ```
