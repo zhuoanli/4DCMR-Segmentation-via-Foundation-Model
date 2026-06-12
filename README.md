@@ -57,8 +57,7 @@ MIUA_2026/
 └── results/
     ├── figures/              # Paper figures (Fig. 1–5)
     ├── tables/               # Paper tables (CSV)
-    ├── metrics_acdc_val.json # All method metrics (ACDC validation)
-    └── metrics_acdc_test.json
+    └── metrics_acdc_val.json # All method metrics (ACDC validation, n=20)
 ```
 
 ---
