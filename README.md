@@ -21,7 +21,7 @@ Cardiac cine MRI segmentation across the full cardiac cycle is essential for com
 
 ---
 
-## Key Results (ACDC Validation, n=20)
+## Results (ACDC Validation, n=20)
 
 | Method | RV Dice | Myo Dice | LV Dice | RV HD95 (mm) | RV ASSD (mm) |
 |--------|---------|----------|---------|-------------|-------------|
@@ -32,7 +32,7 @@ Cardiac cine MRI segmentation across the full cardiac cycle is essential for com
 | U-Net (supervised) ‡ | 0.730 | **0.861** | **0.868** | 2.23 | 0.37 |
 | DINOv2 (supervised) ‡ | 0.553 | 0.719 | 0.793 | 12.91 | 2.81 |
 
-† Proposed zero-shot method. ‡ Supervised methods trained and evaluated at ES only; comparison at intermediate frames not available.
+† Proposed zero-shot method. ‡ Supervised methods trained and evaluated at ES only.
 
 ---
 
