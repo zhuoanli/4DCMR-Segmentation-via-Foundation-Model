@@ -28,8 +28,8 @@ Cardiac cine MRI segmentation across the full cardiac cycle is essential for com
 | SAM2 (Dual-anchored) | 0.745 | 0.647 | 0.806 | 5.86 | 1.20 |
 | MedSAM2 (ED-anchored) | 0.716 | 0.667 | 0.699 | 8.64 | 2.99 |
 | MedSAM2 (ES-anchored) | 0.784 | 0.789 | 0.856 | 7.71 | 2.70 |
-| **MedSAM2 (Dual-anchored) †** | **0.850** | **0.809** | 0.843 | **2.94** | **0.55** |
-| U-Net (supervised) ‡ | 0.730 | **0.861** | **0.868** | 2.23 | 0.37 |
+| MedSAM2 (Dual-anchored) † | 0.850 | 0.809 | 0.843 | 2.94 | 0.55 |
+| U-Net (supervised) ‡ | 0.730 | 0.861 | 0.868 | 2.23 | 0.37 |
 | DINOv2 (supervised) ‡ | 0.553 | 0.719 | 0.793 | 12.91 | 2.81 |
 
 † Proposed zero-shot method. ‡ Supervised methods trained and evaluated at ES only.
