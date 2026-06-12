@@ -460,7 +460,7 @@ def fig3_timevolume(fig_dir, db, medsam2_dir):
         ax.set_title(grp, fontsize=12, fontweight='bold', color=GROUP_COLOR[grp])
         ax.set_xlabel('Cardiac Phase (%)', fontsize=10)
         ax.set_ylabel('LV Volume (mL)', fontsize=10)
-        ax.legend(fontsize=8); ax.grid(alpha=0.3)
+        ax.legend(fontsize=8, loc='lower right'); ax.grid(alpha=0.3)
         ax.text(0.97, 0.97, f'n={len(curves)}', transform=ax.transAxes,
                 ha='right', va='top', fontsize=9, color='gray')
 
@@ -600,16 +600,16 @@ def fig3_timevolume_mnm(fig_dir, prep_mnm_dir, medsam2_mnm_dir):
     print(f"Saved {out}")
 
 
-# ── Figure 4 (NEW): Multi-structure HD95 Ablation + Full-cycle LV Trajectory ──
+# ── Figure 4 (NEW): Multi-structure HD95 Ablation ─────────────────────────────
 
 def fig4_temporal_propagation(fig_dir, db, medsam2_dir, metrics_json_path=None,
                                unet_allframes_dir=None):
     """
-    Four-panel figure proving dual-anchoring benefit across all structures:
-      Panel A: RV HD95 bar chart (methods compared)
+    Three-panel figure: HD95 for all cardiac structures, proving dual-anchoring benefit.
+      Panel A: RV HD95 bar chart
       Panel B: Myo HD95 bar chart
       Panel C: LV HD95 bar chart
-      Panel D: Full-cycle LV volume curves (mean ± std) — verifies dual std is smaller
+    The propagation-distance mechanism is explained in text (Section 4.4).
     """
     VAL_PIDS = [
         'patient017','patient018','patient019','patient020',
@@ -650,9 +650,9 @@ def fig4_temporal_propagation(fig_dir, db, medsam2_dir, metrics_json_path=None,
         return [r[metric_key] for r in metrics.get(method_key, [])
                 if r.get(metric_key) is not None]
 
-    # ── Figure: 1 row of 3 HD95 bar charts + 1 volume curve panel ────────────
-    fig = plt.figure(figsize=(20, 5))
-    gs  = gridspec.GridSpec(1, 4, width_ratios=[1, 1, 1, 1.15], wspace=0.38)
+    # ── Figure: 1 row of 3 HD95 bar charts ───────────────────────────────────
+    fig = plt.figure(figsize=(15, 5))
+    gs  = gridspec.GridSpec(1, 3, width_ratios=[1, 1, 1], wspace=0.38)
 
     x = np.arange(len(BAR_METHODS))
 
@@ -695,68 +695,156 @@ def fig4_temporal_propagation(fig_dir, db, medsam2_dir, metrics_json_path=None,
         for spine in ['top', 'right']:
             ax.spines[spine].set_visible(False)
 
-    # ────────────────── Panel D: Propagation distance vs RV Dice scatter ────────
-    ax_sc = fig.add_subplot(gs[3])
-
-    def get_pp(method_key, metric_key):
-        return {r['pid']: r.get(metric_key) for r in metrics.get(method_key, [])}
-
-    # Load per-patient RV Dice and propagation distances
-    dice_ed   = get_pp('MedSAM2_ED',   'dice_RV')
-    dice_es   = get_pp('MedSAM2_ES',   'dice_RV')
-    dice_dual = get_pp('MedSAM2_Dual', 'dice_RV')
-    dice_unet = get_pp('UNet',          'dice_RV')
-
-    prop_dist = {}
-    for pid in VAL_PIDS:
-        pp = sorted(glob(os.path.join(PREP_DIR, f'{pid}_slice*.npz')))
-        if pp:
-            d0 = np.load(pp[0], allow_pickle=True)
-            prop_dist[pid] = int(d0['es_idx']) - int(d0['ed_idx'])
-
-    pids = [p for p in VAL_PIDS if p in prop_dist and p in dice_ed]
-    dist = np.array([prop_dist[p] for p in pids])
-
-    # ED-anchored: evaluated at ES (propagation distance = es_idx - ed_idx = es_idx)
-    ed_d = np.array([dice_ed[p] for p in pids])
-    # ES-anchored: evaluated at ED (same physical distance, reversed direction)
-    es_d = np.array([dice_es.get(p, np.nan) for p in pids])
-    # Dual-anchored: evaluated at ES which is its anchor → distance ≈ 0
-    dual_d = np.array([dice_dual.get(p, np.nan) for p in pids])
-    # UNet: evaluated at ES (its training frame) → distance = 0 (frame-wise)
-    unet_d = np.array([dice_unet.get(p, np.nan) for p in pids])
-
-    np.random.seed(42)
-    jit = np.random.uniform(-0.15, 0.15, len(pids))
-
-    ax_sc.scatter(dist,        ed_d,   color=C_ED,   alpha=0.80, s=50, label='MedSAM2 (ED-anchored)', zorder=3)
-    ax_sc.scatter(dist,        es_d,   color=C_ES,   alpha=0.80, s=50, label='MedSAM2 (ES-anchored)', marker='^', zorder=3)
-    ax_sc.scatter(jit,         dual_d, color=C_DUAL, alpha=0.85, s=60, label='MedSAM2 (Dual)†', marker='D', zorder=4)
-    ax_sc.scatter(jit + 0.3,   unet_d, color=C_UNET, alpha=0.75, s=50, label='U-Net (frame-wise)', marker='s', zorder=3)
-
-    # Regression line through ED + ES points (both suffer from distance)
-    all_d = np.concatenate([dist, dist])
-    all_v = np.concatenate([ed_d, es_d])
-    mask  = ~np.isnan(all_v)
-    z = np.polyfit(all_d[mask], all_v[mask], 1)
-    r = np.corrcoef(all_d[mask], all_v[mask])[0, 1]
-    xfit = np.linspace(0, dist.max() + 1, 50)
-    ax_sc.plot(xfit, np.polyval(z, xfit), color='#333', lw=1.2, ls='--',
-               alpha=0.5, label=f'Trend (r={r:.2f})')
-
-    ax_sc.set_xlabel('Propagation Distance (frames to anchor)', fontsize=10)
-    ax_sc.set_ylabel('RV Dice', fontsize=10)
-    ax_sc.set_xlim(-1.5, dist.max() + 1.5)
-    ax_sc.set_ylim(0.3, 1.05)
-    ax_sc.set_title('(d) Distance–Quality Relationship\n(more distance → lower Dice; Dual = 0 dist)',
-                    fontsize=11, fontweight='bold')
-    ax_sc.legend(fontsize=7.5, loc='lower left'); ax_sc.grid(alpha=0.3)
-    for spine in ['top', 'right']:
-        ax_sc.spines[spine].set_visible(False)
-
     plt.suptitle('Dual-Anchored MedSAM2: Boundary Accuracy Across All Cardiac Structures',
                  fontsize=12, y=1.02)
     out = os.path.join(fig_dir, 'paper_fig4_temporal_propagation.png')
+    plt.savefig(out, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Saved {out}")
+
+
+# ── Figure: Pathology-Stratified Dice Heatmap ────────────────────────────────
+
+def fig_pathology_heatmap(fig_dir, metrics_json_path):
+    """5×3 heatmap: rows=NOR/DCM/HCM/MINF/RV, cols=RV/Myo/LV, values=mean Dice for MedSAM2_Dual."""
+    if not os.path.exists(metrics_json_path):
+        print(f"Heatmap: {metrics_json_path} not found, skipping"); return
+    with open(metrics_json_path) as f:
+        metrics = json.load(f)
+    if 'MedSAM2_Dual' not in metrics:
+        print("Heatmap: MedSAM2_Dual not in metrics, skipping"); return
+
+    GROUPS  = ['NOR', 'DCM', 'HCM', 'MINF', 'RV']
+    STRUCT_KEYS = [('RV', 'dice_RV'), ('Myo', 'dice_Myo'), ('LV', 'dice_LV')]
+    rows = metrics['MedSAM2_Dual']
+
+    matrix = np.zeros((len(GROUPS), 3))
+    for i, grp in enumerate(GROUPS):
+        grp_rows = [r for r in rows if r.get('group') == grp]
+        for j, (_, key) in enumerate(STRUCT_KEYS):
+            matrix[i, j] = float(np.mean([r[key] for r in grp_rows])) if grp_rows else 0.0
+
+    fig, ax = plt.subplots(figsize=(5.5, 5.2), facecolor='white')
+    im = ax.imshow(matrix, cmap='RdYlGn', vmin=0.4, vmax=1.0, aspect='auto')
+
+    for i in range(len(GROUPS)):
+        for j in range(3):
+            val = matrix[i, j]
+            text_color = 'black' if 0.55 < val < 0.95 else 'white'
+            ax.text(j, i, f'{val:.2f}', ha='center', va='center',
+                    fontsize=14, fontweight='bold', color=text_color)
+
+    ax.set_xticks([0, 1, 2])
+    ax.set_xticklabels(['RV', 'Myo', 'LV'], fontsize=13)
+    ax.set_yticks(range(len(GROUPS)))
+    ax.set_yticklabels(GROUPS, fontsize=13)
+    ax.tick_params(length=0)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label('Dice Score', fontsize=11)
+    cbar.ax.tick_params(labelsize=10)
+
+    ax.set_title('MedSAM2 (Dual-anchored)\nDice Score by Pathology Group',
+                 fontsize=11, fontweight='bold', pad=10)
+    plt.tight_layout()
+    out = os.path.join(fig_dir, 'paper_fig_pathology_heatmap.png')
+    plt.savefig(out, dpi=150, bbox_inches='tight', facecolor='white')
+    plt.close()
+    print(f"Saved {out}")
+
+
+# ── Figure: Per-Group Functional Biomarkers (PER / PFR / SV) ─────────────────
+
+def fig_biomarkers(fig_dir, db, medsam2_dir):
+    """3-panel bar chart: PER / PFR / Stroke Volume per pathology group.
+    Computes LV volume curves from all 100 ACDC patients (medsam2 bidir key),
+    then derives PER=max(-dV/dt) over systole, PFR=max(dV/dt) over diastole, SV=EDV-ESV.
+    """
+    prep_dir = PREP_DIR
+    group_data = {g: {'PER': [], 'PFR': [], 'SV': []} for g in GROUPS}
+
+    for pid in tqdm(range(1, 101), desc='Biomarkers'):
+        pdir = os.path.join(db, f'patient{pid:03d}')
+        cfg  = os.path.join(pdir, 'Info.cfg')
+        if not os.path.exists(cfg): continue
+        info  = parse_info_cfg(cfg)
+        group = info.get('Group', 'UNK')
+        if group not in GROUPS: continue
+
+        prep_npzs = sorted(glob(os.path.join(prep_dir,    f'patient{pid:03d}_slice*.npz')))
+        res_npzs  = sorted(glob(os.path.join(medsam2_dir, f'patient{pid:03d}_slice*.npz')))
+        if not prep_npzs or not res_npzs: continue
+
+        d0     = np.load(prep_npzs[0], allow_pickle=True)
+        T      = np.load(res_npzs[0],  allow_pickle=True)['bidir'].shape[0]
+        ed_idx = int(d0['ed_idx']); es_idx = int(d0['es_idx'])
+        pixdim = d0['pixdim'].astype(np.float64)
+        orig_H = int(d0['orig_H']); orig_W = int(d0['orig_W'])
+        scale  = (orig_H / 512.0) * (orig_W / 512.0)
+        voxel_mm3 = float(pixdim[0]) * float(pixdim[1]) * float(pixdim[2]) * scale
+
+        lv_v = np.zeros(T, dtype=np.float64)
+        for r_path in res_npzs:
+            rd = np.load(r_path, allow_pickle=True)
+            if 'bidir' not in rd: continue
+            for t in range(min(T, rd['bidir'].shape[0])):
+                lv_v[t] += (rd['bidir'][t] == 3).sum()
+        lv_v *= voxel_mm3 / 1000.0
+
+        dVdt  = np.diff(lv_v)
+        syst  = dVdt[ed_idx:es_idx] if es_idx > ed_idx else dVdt
+        diast = dVdt[es_idx:] if es_idx < T - 1 else dVdt
+
+        PER = float(-np.min(syst))  if len(syst)  > 0 else 0.0
+        PFR = float( np.max(diast)) if len(diast) > 0 else 0.0
+        SV  = float(lv_v[ed_idx] - np.min(lv_v))
+
+        group_data[group]['PER'].append(PER)
+        group_data[group]['PFR'].append(PFR)
+        group_data[group]['SV'].append(SV)
+
+    METRICS = [
+        ('PER', 'Peak Ejection Rate\n(mL/frame)', '#E53935'),
+        ('PFR', 'Peak Filling Rate\n(mL/frame)',  '#1E88E5'),
+        ('SV',  'Stroke Volume (mL)',              '#43A047'),
+    ]
+    x = np.arange(len(GROUPS))
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.5), facecolor='white')
+
+    for ax, (metric, ylabel, bar_color) in zip(axes, METRICS):
+        means = [np.mean(group_data[g][metric]) if group_data[g][metric] else 0 for g in GROUPS]
+        stds  = [np.std( group_data[g][metric]) if group_data[g][metric] else 0 for g in GROUPS]
+        colors = [GROUP_COLOR[g] for g in GROUPS]
+
+        bars = ax.bar(x, means, color=colors, width=0.6, zorder=2,
+                      edgecolor='white', linewidth=0.8)
+        for i, (m, s) in enumerate(zip(means, stds)):
+            ax.errorbar(x[i], m, yerr=[[min(s, m)], [s]],
+                        fmt='none', color='#333', linewidth=1.4, capsize=4, zorder=3)
+            ax.text(x[i], m + s + max(means) * 0.02, f'{m:.1f}',
+                    ha='center', va='bottom', fontsize=8.5, color='#333')
+
+        # NOR reference line
+        nor_mean = means[GROUPS.index('NOR')]
+        ax.axhline(nor_mean, color='#555', linewidth=1.0, linestyle='--', alpha=0.6,
+                   label=f'NOR ref ({nor_mean:.1f})')
+        ax.legend(fontsize=7.5, loc='upper right')
+
+        ax.set_xticks(x); ax.set_xticklabels(GROUPS, fontsize=11)
+        ax.set_ylabel(ylabel, fontsize=10)
+        ax.set_ylim(0, max(means) * 1.30)
+        ax.grid(axis='y', alpha=0.3, zorder=0)
+        ax.set_facecolor('#FAFAFA')
+        for spine in ['top', 'right']:
+            ax.spines[spine].set_visible(False)
+
+    plt.suptitle('Pathology-Specific Functional Biomarkers from Full-Cycle Propagation\n'
+                 '(MedSAM2 Dual-anchored, n=20 per group, all 100 ACDC patients)',
+                 fontsize=11, y=1.02)
+    plt.tight_layout()
+    out = os.path.join(fig_dir, 'paper_fig_biomarkers.png')
     plt.savefig(out, dpi=150, bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"Saved {out}")

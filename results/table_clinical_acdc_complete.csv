@@ -1,0 +1,7 @@
+Method,N,EF_MAE,EF_std,EF_r,EDV_MAE,EDV_std,ESV_MAE,ESV_std
+SAM2,20,6.07,4.34,0.957,64.2,26.3,38.5,38.2
+MedSAM2 (ED-anchored),20,9.92,8.32,0.868,23.2,39.7,21.9,30.8
+MedSAM2 (ES-anchored),20,7.61,4.51,0.968,15.1,27.9,16.2,20.0
+MedSAM2 (Dual-anchored)†,20,7.63,9.62,0.892,23.2,39.7,16.2,20.0
+U-Net (supervised),20,5.17,7.59,0.889,5.4,6.6,8.7,10.5
+DINOv2 (supervised),20,7.42,10.65,0.787,12.7,10.9,12.2,14.6

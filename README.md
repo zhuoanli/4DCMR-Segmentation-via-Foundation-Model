@@ -1,308 +1,235 @@
-# Zero-Shot 4D Cardiac Cine MRI Segmentation via Dual-Anchored Video Propagation
+# Zero-Shot Full-Cycle Cardiac Cine MRI Segmentation via Dual-Anchored Medical Video Foundation Model
 
-**Venue:** Medical Image Understanding and Analysis (MIUA) 2026 — Special Session  
-**Status:** Submitted
+**MIUA 2026 — Main Track (Accepted)**
 
 ---
 
 ## Abstract
 
-Automatic segmentation of cardiac structures across the full cardiac cycle is essential for computing ejection fraction (EF) and time-resolved volume curves — the gold standard metrics for diagnosing cardiomyopathies and heart failure. Existing supervised methods (U-Net, DINOv2) are trained on only two annotated frames per cycle (end-diastole, end-systole), leaving the remaining ~25 frames unanalyzed and requiring expensive re-annotation when scanner protocols or patient populations change.
-
-We propose a **dual-anchored bidirectional propagation** strategy using **MedSAM2**, a video foundation model fine-tuned on medical images. Given ground-truth segmentation prompts at two frames — the end-diastolic (ED) and end-systolic (ES) frames — MedSAM2 propagates segmentation masks across all ~30 frames of the cine MRI cycle without any task-specific training.
-
-On the ACDC benchmark (n=20, stratified validation set), our proposed method achieves:
-- **Dice: 0.850 / 0.809 / 0.843** (RV / Myocardium / LV) — surpassing supervised U-Net on RV (0.730) with zero training
-- **EF MAE: 7.63%, Pearson r=0.892** — approaching supervised U-Net (MAE 5.18%, r=0.889)
-
-Zero-shot generalization is further validated on the multi-vendor M&Ms dataset (136 patients, 4 scanner manufacturers) with no re-training.
+Cardiac cine MRI segmentation across the full cardiac cycle is essential for computing ejection fraction, ventricular volumes, and time-resolved functional indices, yet dense frame-level annotation remains costly. Conventional supervised methods are trained on two clinically labelled key frames—end-diastole (ED) and end-systole (ES)—leaving intermediate frames unsegmented. We present a zero-shot framework using **MedSAM2**, a medical video foundation model, with a **dual-anchored propagation strategy** that prompts the model at both ED and ES and merges bidirectional predictions at the temporal midpoint. On ACDC (n=20, stratified), MedSAM2 (Dual-anchored) achieves Dice 0.850/0.809/0.843 for RV/Myo/LV with RV HD95 2.94 mm—matching supervised baselines on RV without any cardiac-specific training. Full-cycle propagation further enables extraction of time-resolved biomarkers (PER, PFR, SV) that reveal pathology-specific functional signatures inaccessible to ED/ES-only methods.
 
 ---
 
-## Method: Dual-Anchored Propagation
+## Method Overview
 
-![Method Diagram](figures/fig1_methods.png)
+![Method Overview](figures/camera_methods.png)
 
-MedSAM2 uses a causal memory bank: when prompted at a single frame, it propagates forward/backward through the sequence. However, temporal drift accumulates with distance from the prompt anchor.
-
-**Key insight:** Using *two* anchors (ED + ES) ensures that every frame is at most `(es_idx - ed_idx) / 2` steps from the nearest anchor — minimizing maximum drift.
-
-**Algorithm:**
-```
-Input:  Cine sequence F = {f_0, ..., f_{T-1}}
-        GT bounding box at ed_idx (ED frame)
-        GT bounding box at es_idx (ES frame)
-
-Step 1 — ED-anchored pass:
-        Prompt MedSAM2 at ed_idx → propagate fwd/bwd → ed_pred[t] for all t
-
-Step 2 — ES-anchored pass:
-        Prompt MedSAM2 at es_idx → propagate fwd/bwd → es_pred[t] for all t
-
-Step 3 — Merge:
-        mid = (ed_idx + es_idx) // 2
-        S[t] = ed_pred[t]  if t <= mid
-               es_pred[t]  if t >  mid
-
-Output: Full-cycle segmentation S = {s_0, ..., s_{T-1}}
-```
-
-**Ablations (same model, different anchoring):**
-- `MedSAM2 (ED-anchored)` — prompt at ED only, propagate fwd+bwd
-- `MedSAM2 (ES-anchored)` — prompt at ES only, propagate fwd+bwd
+**(a) Data and prompt preparation** — 4D cine MRI sequences preprocessed slice-by-slice to 512×512; bounding-box prompts at ED and ES anchor frames.  
+**(b) Dual-anchored MedSAM2 propagation** — forward pass from ED + backward pass from ES, merged at temporal midpoint mid = ⌊(t_ED + t_ES)/2⌋.  
+**(c) Full-cycle functional analysis** — V(t) curve yields PER, PFR, SV, TMS biomarkers per patient.  
+**(d) Study design** — ACDC 100 patients, 5 pathology groups, evaluated against SAM2, U-Net, and DINOv2 baselines.
 
 ---
 
-## Results
+## Key Results (ACDC Validation, n=20)
 
-### Table 1: Segmentation Accuracy — ACDC Validation Set (n=20)
+| Method | RV Dice | Myo Dice | LV Dice | RV HD95 (mm) | RV ASSD (mm) |
+|--------|---------|----------|---------|-------------|-------------|
+| SAM2 (Dual-anchored) | 0.745 | 0.647 | 0.806 | 5.86 | 1.20 |
+| MedSAM2 (ED-anchored) | 0.716 | 0.667 | 0.699 | 8.64 | 2.99 |
+| MedSAM2 (ES-anchored) | 0.784 | 0.789 | 0.856 | 7.71 | 2.70 |
+| **MedSAM2 (Dual-anchored) †** | **0.850** | **0.809** | 0.843 | **2.94** | **0.55** |
+| U-Net (supervised) ‡ | 0.730 | **0.861** | **0.868** | 2.23 | 0.37 |
+| DINOv2 (supervised) ‡ | 0.553 | 0.719 | 0.793 | 12.91 | 2.81 |
 
-| Method | RV Dice | Myo Dice | LV Dice |
-|--------|---------|----------|---------|
-| SAM2 (vanilla) | 0.745 ± 0.111 | 0.647 ± 0.192 | 0.806 ± 0.045 |
-| MedSAM2 (ED-anchored) | 0.716 ± 0.111 | 0.667 ± 0.200 | 0.699 ± 0.193 |
-| MedSAM2 (ES-anchored) | 0.784 ± 0.116 | 0.789 ± 0.137 | 0.856 ± 0.125 |
-| **MedSAM2 (Dual-anchored) †** | **0.850 ± 0.092** | **0.809 ± 0.125** | **0.843 ± 0.111** |
-| U-Net (supervised) | 0.730 ± 0.137 | 0.861 ± 0.059 | 0.868 ± 0.105 |
-| DINOv2 (supervised) | 0.553 ± 0.142 | 0.719 ± 0.072 | 0.793 ± 0.122 |
-
-† Proposed method. Zero-shot: no cardiac-specific training.
-
-### Table 2: Clinical Metrics — EF / EDV / ESV (ACDC Validation, n=20)
-
-| Method | EF MAE | EF r | EDV MAE | EDV r | ESV MAE | ESV r |
-|--------|--------|------|---------|-------|---------|-------|
-| SAM2 | 6.07 ± 4.34% | 0.957 | 64.2 ± 26.3 mL | 0.978 | 38.5 ± 38.2 mL | 0.987 |
-| MedSAM2 (ED-anchored) | 9.92 ± 8.32% | 0.868 | 23.2 ± 39.7 mL | 0.769 | 21.9 ± 30.8 mL | 0.857 |
-| MedSAM2 (ES-anchored) | 7.61 ± 4.51% | 0.968 | 15.1 ± 27.9 mL | 0.903 | 16.2 ± 20.0 mL | 0.938 |
-| **MedSAM2 (Dual-anchored) †** | **7.63 ± 9.62%** | **0.892** | 23.2 ± 39.7 mL | 0.769 | 16.2 ± 20.0 mL | 0.938 |
-| U-Net (supervised) | **5.18 ± 7.59%** | 0.889 | **5.4 ± 6.6 mL** | **0.993** | **8.7 ± 10.5 mL** | **0.982** |
-| DINOv2 (supervised) | 7.42 ± 10.65% | 0.787 | 12.7 ± 10.9 mL | 0.976 | 12.2 ± 14.6 mL | 0.966 |
-
-### Figures
-
-| Figure | Description |
-|--------|-------------|
-| ![Qualitative](figures/fig2_qualitative.png) | Full-cycle segmentation comparison across methods |
-| ![Boxplot](figures/fig3_boxplot.png) | Dice score distributions by structure and method |
-| ![Time-Volume](figures/fig4_timevolume.png) | LV time-volume curves by cardiac pathology group |
-| ![EF Analysis](figures/fig5_ef_ba_right.png) | EF regression (r=0.892) and Bland-Altman analysis |
+† Proposed zero-shot method. ‡ Supervised methods trained and evaluated at ES only; comparison at intermediate frames not available.
 
 ---
 
-## Setup
-
-### Environment
-
-```bash
-module load conda        # HPC: load conda
-conda activate cinema_ft
-```
-
-Key packages: `torch`, `numpy`, `nibabel`, `SimpleITK`, `scipy`, `matplotlib`, `seaborn`, `scikit-learn`, `pandas`
-
-### Third-Party Dependencies (install separately)
-
-These repos must be cloned alongside this project and are **not** included (too large):
-
-```bash
-# MedSAM2 — required for inference
-git clone https://github.com/MedSAM2/MedSAM2.git MedSAM2
-# Download checkpoint: MedSAM2_latest.pt → MedSAM2/checkpoints/
-
-# SAM2 — required for vanilla SAM2 inference
-git clone https://github.com/facebookresearch/sam2.git sam2
-
-# DINOv2 — required for DINOv2 training/inference
-git clone https://github.com/facebookresearch/dinov2.git dinov2
-```
-
-### Dataset Download
-
-Datasets are **not included** in this repo. Download from official sources:
-
-- **ACDC:** [MICCAI ACDC Challenge](https://www.creatis.insa-lyon.fr/Challenge/acdc/databases.html)  
-  → Place in `database/training/` (100 patients, each with `patient{NNN}/Info.cfg` and `.nii.gz` files)
-
-- **M&Ms:** [Multi-Centre, Multi-Vendor Challenge](https://www.ub.edu/mnms/)  
-  → Place in `MnM/` and `MnM2/`
-
----
-
-## Reproducibility
-
-### 1. Preprocess Data
-
-```bash
-# ACDC full dataset (4D .nii.gz → per-patient .npz slices)
-python prep_acdc_4d.py
-
-# ACDC test set
-python prep_acdc_test.py
-
-# M&Ms dataset
-python prep_mnm.py
-
-# MnM2 short-axis
-python prep_mnm2_sa.py
-```
-
-Preprocessed data is saved to `preprocessed/` (ACDC) and `preprocessed_mnm/` (M&Ms).
-
-### 2. MedSAM2 Inference — Zero-Shot (no training required)
-
-Runs all three modes (ED-anchored, ES-anchored, Dual-anchored) in a single pass:
-
-```bash
-# ACDC validation set
-cd MedSAM2
-python ../infer_medsam2.py \
-    --ckpt checkpoints/MedSAM2_latest.pt \
-    --cfg  configs/sam2.1_hiera_t512.yaml \
-    --data /path/to/preprocessed \
-    --out  /path/to/results/medsam2
-
-# or via SLURM:
-sbatch jobs/job_medsam2.sh
-
-# M&Ms cross-vendor generalization:
-sbatch jobs/job_medsam2_mnm.sh
-```
-
-### 3. U-Net Training — Supervised Baseline
-
-```bash
-# Train on 80 ACDC patients (ED+ES slices), evaluate on 20-patient val set
-python train_eval_unet.py \
-    --db     database/training \
-    --out    results/unet \
-    --epochs 30 \
-    --batch  16 \
-    --lr     1e-4
-
-# or via SLURM:
-sbatch jobs/job_unet.sh
-
-# Evaluate only (if model already trained):
-python train_eval_unet.py --eval_only
-
-# Cross-vendor inference on M&Ms:
-python infer_unet_mnm.py
-sbatch jobs/job_unet_eval_mnm.sh
-```
-
-### 4. DINOv2 Training — Supervised Baseline
-
-```bash
-# Train DINOv2-S/14 decoder on ACDC ED+ES slices
-python train_eval_dinov2.py \
-    --epochs 50 \
-    --batch  8 \
-    --lr     1e-4
-
-# or via SLURM:
-sbatch jobs/job_dinov2.sh
-
-# Evaluate only:
-python train_eval_dinov2.py --eval_only
-
-# Cross-vendor inference:
-python infer_dinov2_mnm.py
-sbatch jobs/job_dinov2_eval_mnm.sh
-```
-
-### 5. Evaluation & Figure Generation
-
-```bash
-# Compute all metrics (Dice, HD95, EF/EDV/ESV) for all methods
-python compute_all_metrics.py --dataset acdc_val
-
-# Generate all paper figures (requires results to exist)
-python evaluate_and_figures.py \
-    --results_dir results \
-    --db          database/training \
-    --fig_dir     figures
-
-# or via SLURM:
-sbatch jobs/job_figures.sh
-```
-
----
-
-## Project Structure
+## Repository Structure
 
 ```
-MIUA-2026/
-├── README.md
-│
-├── figures/                      # Paper-ready figures (final versions)
-│   ├── fig1_methods.png          # Method diagram: Dual-Anchored Propagation
-│   ├── fig2_qualitative.png      # Full-cycle segmentation comparison
-│   ├── fig3_boxplot.png          # Dice score distributions
-│   ├── fig4_timevolume.png       # LV time-volume curves by pathology
-│   └── fig5_ef_ba_right.png      # EF regression + Bland-Altman
-│
+MIUA_2026/
+├── infer_medsam2.py          # Zero-shot inference: ED/ES/dual-anchor propagation
+├── prep_acdc_4d.py           # ACDC dataset preprocessing (NIfTI → NPZ slices)
+├── compute_all_metrics.py    # Dice, HD95, ASSD, EF/EDV/ESV computation
+├── evaluate_and_figures.py   # All paper figures and tables
+├── train_eval_unet.py        # Supervised U-Net training and evaluation
+├── train_unet_combined.py    # U-Net training on ACDC + MnM combined
+├── train_eval_dinov2.py      # DINOv2 segmentation head training and evaluation
 ├── results/
-│   ├── table1_dice.csv           # Dice scores (ACDC val n=20)
-│   ├── table_clinical_acdc.csv   # EF/EDV/ESV metrics (ACDC val n=20)
-│   └── unet/results.json         # U-Net detailed results
-│
-├── # -- Preprocessing --
-├── prep_acdc_4d.py               # ACDC 4D NIfTI → per-slice .npz
-├── prep_acdc_test.py             # ACDC test set preprocessing
-├── prep_mnm.py                   # M&Ms dataset preprocessing
-├── prep_mnm2_sa.py               # MnM2 short-axis preprocessing
-│
-├── # -- Inference --
-├── infer_medsam2.py              # MedSAM2: ED/ES/Dual-anchored inference
-├── infer_sam2.py                 # Vanilla SAM2 inference
-├── infer_unet_mnm.py             # U-Net inference on M&Ms
-├── infer_dinov2_mnm.py           # DINOv2 inference on M&Ms
-│
-├── # -- Training (supervised baselines) --
-├── train_eval_unet.py            # U-Net: train + evaluate on ACDC
-├── train_unet_combined.py        # U-Net: train on ACDC+MnM combined
-├── train_eval_dinov2.py          # DINOv2: train + evaluate on ACDC
-├── train_dinov2_combined.py      # DINOv2: train on ACDC+MnM combined
-│
-├── # -- Evaluation & Figures --
-├── compute_all_metrics.py        # Compute Dice, HD95, EF/EDV/ESV for all methods
-├── evaluate_and_figures.py       # Generate all paper figures
-│
-└── jobs/                         # SLURM job submission scripts
-    ├── job_medsam2.sh            # MedSAM2 inference (ACDC)
-    ├── job_medsam2_mnm.sh        # MedSAM2 inference (M&Ms)
-    ├── job_unet.sh               # U-Net training
-    ├── job_unet_eval_mnm.sh      # U-Net evaluation on M&Ms
-    ├── job_dinov2.sh             # DINOv2 training
-    ├── job_dinov2_eval_mnm.sh    # DINOv2 evaluation on M&Ms
-    ├── job_prep*.sh              # Data preprocessing jobs
-    ├── job_metrics.sh            # Metric computation
-    └── job_figures.sh            # Figure generation
+│   ├── metrics_acdc_val.json         # All method metrics (ACDC validation)
+│   ├── camera_table1_segmentation.csv
+│   ├── camera_table4_biomarkers.csv
+│   ├── camera_tableA_noise.csv
+│   └── camera_tableB_clinical.csv
+├── figures/
+│   ├── camera_methods.png            # Methods overview figure (Fig. 1)
+│   ├── paper_fig1_qualitative.png    # Qualitative segmentation results (Fig. 2)
+│   ├── paper_fig3_timevolume.png     # LV time-volume curves (Fig. 3)
+│   └── paper_fig_pathology_heatmap.png  # Per-pathology Dice heatmap (Fig. 5)
+└── camera_ready/
+    ├── figures/                      # All paper figures (final)
+    └── tables/                       # All paper CSV tables (final)
 ```
 
 ---
 
-## Datasets Summary
+## Installation
 
-| Dataset | Split | Patients | Scanner Vendors | Pathologies |
-|---------|-------|----------|-----------------|-------------|
-| ACDC | Train | 80 | Siemens | NOR, DCM, HCM, MINF, RV (16 each) |
-| ACDC | Val | 20 | Siemens | NOR, DCM, HCM, MINF, RV (4 each) |
-| M&Ms | Test | 136 | Siemens, Philips, GE, Canon | Mixed |
+### Requirements
+
+- Python 3.10
+- CUDA 12.4
+- PyTorch 2.5.0+cu124
+
+### Setup
+
+```bash
+conda create -n medsam2_cardiac python=3.10
+conda activate medsam2_cardiac
+
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+pip install -r requirements.txt
+```
+
+### MedSAM2 Checkpoint
+
+Download the MedSAM2 checkpoint from the [MedSAM2 repository](https://github.com/bowang-lab/MedSAM2) and place it at:
+
+```
+MedSAM2/checkpoints/MedSAM2.pt
+MedSAM2/configs/sam2.1_hiera_t.yaml
+```
+
+---
+
+## Dataset Preparation (ACDC)
+
+1. Download the ACDC dataset from [acdc.creatis.insa-lyon.fr](https://acdc.creatis.insa-lyon.fr)
+2. Place under `ACDC_training/` and `ACDC_testing/`
+3. Run preprocessing:
+
+```bash
+python prep_acdc_4d.py \
+    --acdc_dir ACDC_training/ \
+    --output_dir preprocessed/ \
+    --split train
+```
+
+This produces per-patient, per-slice NPZ files with keys: `imgs` (T×512×512), `gts` (T×512×512), `ed_idx`, `es_idx`, `group`.
+
+---
+
+## Running Inference (Zero-Shot)
+
+### Dual-anchored (proposed)
+
+```bash
+python infer_medsam2.py \
+    --preprocessed_dir preprocessed/ \
+    --output_dir results/medsam2/ \
+    --model_cfg MedSAM2/configs/sam2.1_hiera_t.yaml \
+    --checkpoint MedSAM2/checkpoints/MedSAM2.pt \
+    --mode bidir
+```
+
+### Single-anchor variants (ablation)
+
+```bash
+# ED-anchored
+python infer_medsam2.py --mode forward --output_dir results/medsam2_ed/ ...
+
+# ES-anchored
+python infer_medsam2.py --mode backward --output_dir results/medsam2_es/ ...
+```
+
+### Bbox noise robustness (Supplementary A)
+
+```bash
+python infer_medsam2.py --mode bidir --bbox_noise 0.10 --output_dir results/medsam2_noise10/ ...
+python infer_medsam2.py --mode bidir --bbox_noise 0.20 --output_dir results/medsam2_noise20/ ...
+```
+
+---
+
+## Evaluation
+
+```bash
+python compute_all_metrics.py --dataset acdc
+```
+
+Outputs metrics to `results/metrics_acdc_val.json` including Dice, HD95, ASSD per patient per method.
+
+---
+
+## Training Baselines
+
+### U-Net (supervised)
+
+```bash
+python train_eval_unet.py --mode train \
+    --preprocessed_dir preprocessed/ \
+    --output_dir results/unet/
+
+python train_eval_unet.py --mode eval \
+    --preprocessed_dir preprocessed/ \
+    --checkpoint results/unet/best_model.pth
+```
+
+### DINOv2 (supervised)
+
+```bash
+python train_eval_dinov2.py --mode train \
+    --preprocessed_dir preprocessed/ \
+    --output_dir results/dinov2/
+
+python train_eval_dinov2.py --mode eval \
+    --preprocessed_dir preprocessed/ \
+    --checkpoint results/dinov2/best_model.pth
+```
+
+---
+
+## Reproduce Figures and Tables
+
+All figures and tables are generated by `evaluate_and_figures.py`:
+
+```bash
+python evaluate_and_figures.py
+```
+
+Outputs:
+- `figures/paper_fig1_qualitative.png` — qualitative segmentation grid
+- `figures/paper_fig3_timevolume.png` — per-pathology LV time-volume curves
+- `figures/paper_fig_pathology_heatmap.png` — Dice heatmap by pathology × structure
+- `results/camera_table*.csv` — all paper tables
+
+---
+
+## Camera-Ready Materials
+
+All final paper figures and tables are organised in `camera_ready/`:
+
+| File | Paper label |
+|------|------------|
+| `camera_ready/figures/fig1_methods.png` | Fig. 1 — Methods overview |
+| `camera_ready/figures/fig2_qualitative.png` | Fig. 2 — Qualitative results |
+| `camera_ready/figures/fig3_timevolume.png` | Fig. 3 — LV time-volume curves |
+| `camera_ready/figures/fig4_dice_boxplot.png` | Fig. 4 — Dice ablation box plots |
+| `camera_ready/figures/fig5_heatmap.png` | Fig. 5 — Pathology-stratified Dice heatmap |
+| `camera_ready/tables/table1_segmentation.csv` | Table 1 — Dice/HD95/ASSD |
+| `camera_ready/tables/table4_biomarkers.csv` | Table 4 — Per-group biomarkers |
+| `camera_ready/tables/tableA_noise.csv` | Supp. Table A — Bbox noise robustness |
+| `camera_ready/tables/tableB_clinical.csv` | Supp. Table B — EF/EDV/ESV |
 
 ---
 
 ## Citation
 
-If you use this code or results, please cite:
+If you use this code, please cite:
 
 ```bibtex
-@inproceedings{li2026medsam2cardiac,
-  title     = {Zero-Shot 4D Cardiac Cine MRI Segmentation via Dual-Anchored Video Propagation with Clinical Validation},
-  author    = {Li, Zhuoan},
+@inproceedings{li2026zeroshotcardiac,
+  title     = {Zero-Shot Full-Cycle Cardiac Cine MRI Segmentation and Temporal Functional Analysis via Dual-Anchored Medical Video Foundation Model},
+  author    = {Li, Zhuoan and others},
   booktitle = {Medical Image Understanding and Analysis (MIUA)},
-  year      = {2026},
-  publisher = {Springer}
+  year      = {2026}
 }
 ```
+
+---
+
+## Acknowledgements
+
+This work uses the [MedSAM2](https://github.com/bowang-lab/MedSAM2) framework and the [ACDC dataset](https://acdc.creatis.insa-lyon.fr). We thank the ACDC organisers for providing a publicly available benchmark.

@@ -71,6 +71,11 @@ LLM_shortpaper/
 # ── Figures: keep paper_ prefixed finals, ignore drafts ──────────────────────
 *.png
 !figures/paper_*.png
+!figures/camera_methods.png
+!camera_ready/figures/*.png
+
+# ── Camera-ready CSV tables ───────────────────────────────────────────────────
+!results/camera_*.csv
 
 # ── Analysis docs and scratch ────────────────────────────────────────────────
 acdc_analysis.md
