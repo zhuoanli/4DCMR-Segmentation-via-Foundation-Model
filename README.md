@@ -21,7 +21,7 @@ Cardiac cine MRI segmentation across the full cardiac cycle is essential for com
 
 ---
 
-## Results
+## Key Results
 
 | Method | RV Dice | Myo Dice | LV Dice | RV HD95 (mm) | RV ASSD (mm) |
 |--------|---------|----------|---------|-------------|-------------|
@@ -122,7 +122,7 @@ python inference/infer_medsam2.py \
     --mode bidir
 ```
 
-### Single-anchor variants (ablation)
+### Single-anchor variants 
 
 ```bash
 # ED-anchored
@@ -132,7 +132,7 @@ python inference/infer_medsam2.py --mode forward --output_dir results/medsam2_ed
 python inference/infer_medsam2.py --mode backward --output_dir results/medsam2_es/ ...
 ```
 
-### Bbox noise robustness (Supplementary A)
+### Bbox noise robustness 
 
 ```bash
 python inference/infer_medsam2.py --mode bidir --bbox_noise 0.10 --output_dir results/medsam2_noise10/ ...
@@ -179,7 +179,7 @@ python training/train_eval_dinov2.py --mode eval \
 
 ---
 
-## Reproduce Figures and Tables
+## Evaluation
 
 ```bash
 python evaluate_and_figures.py
@@ -189,7 +189,7 @@ Outputs all paper figures to `results/figures/` and tables to `results/tables/`.
 
 ---
 
-## Paper Assets
+## Results
 
 All final figures and tables used in the paper are in `results/`:
 
