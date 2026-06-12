@@ -68,14 +68,9 @@ MR-RATE/
 nnUNet/
 LLM_shortpaper/
 
-# ── Figures: keep paper_ prefixed finals, ignore drafts ──────────────────────
+# ── Figures in results/ ───────────────────────────────────────────────────────
 *.png
-!figures/paper_*.png
-!figures/camera_methods.png
-!camera_ready/figures/*.png
-
-# ── Camera-ready CSV tables ───────────────────────────────────────────────────
-!results/camera_*.csv
+!results/figures/*.png
 
 # ── Analysis docs and scratch ────────────────────────────────────────────────
 acdc_analysis.md
