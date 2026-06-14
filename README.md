@@ -15,7 +15,7 @@ Cardiac cine MRI segmentation across the full cardiac cycle is essential for com
 ![Method Overview](results/figures/fig1_methods.png)
 
 **(a) Data and prompt preparation** — 4D cine MRI sequences preprocessed slice-by-slice to 512×512; bounding-box prompts at ED and ES anchor frames.  
-**(b) Dual-anchored MedSAM2 propagation** — forward pass from ED + backward pass from ES, merged at temporal midpoint mid = ⌊(t_ES - t_ED)/2⌋.  
+**(b) Dual-anchored MedSAM2 propagation** — forward pass from ED + backward pass from ES, merged at temporal midpoint mid = ⌊(t_ES + t_ED)/2⌋.  
 **(c) Full-cycle functional analysis** — V(t) curve yields PER, PFR, SV, TMS biomarkers per patient.  
 **(d) Study design** — ACDC 100 patients, 5 pathology groups, evaluated against SAM2, U-Net, and DINOv2 baselines.
 
