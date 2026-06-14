@@ -223,4 +223,4 @@ If you use this code, please cite:
 
 ## Acknowledgements
 
-This work uses the [MedSAM2](https://github.com/bowang-lab/MedSAM2) framework and the [ACDC dataset](https://acdc.creatis.insa-lyon.fr). We thank the ACDC organisers for providing a publicly available benchmark.
+This work uses the [MedSAM2](https://github.com/bowang-lab/MedSAM2) framework and the [ACDC dataset](https://acdc.creatis.insa-lyon.fr). We thank the ACDC organisers for providing a publicly available benchmark. 
