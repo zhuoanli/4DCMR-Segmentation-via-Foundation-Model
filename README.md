@@ -1,6 +1,9 @@
 # Zero-Shot Full-Cycle 4D Cardiac Cine MRI Segmentation via Dual-Anchored Medical Video Foundation Model
 
-
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Model](https://img.shields.io/badge/model-MedSAM2-7c3aed.svg)](https://arxiv.org/abs/2408.00874)
+[![Dataset](https://img.shields.io/badge/data-ACDC-orange.svg)](https://www.creatis.insa-lyon.fr/Challenge/acdc/)
+![Zero-shot](https://img.shields.io/badge/training-zero--shot-success.svg)
 
 ---
 
